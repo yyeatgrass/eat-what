@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "eat-what",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-10-03",
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/ws"]
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ROOM",
+        "class_name": "LunchRoom"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["LunchRoom"]
+    }
+  ]
+}
