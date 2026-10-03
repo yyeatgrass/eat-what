@@ -83,7 +83,12 @@ export function useRoom() {
       stopped = true;
       window.clearInterval(heartbeat);
       window.clearTimeout(retryTimer);
-      socket?.close();
+      if (!socket) return;
+      if (socket.readyState === WebSocket.CONNECTING) {
+        socket.addEventListener("open", () => socket?.close(), { once: true });
+        return;
+      }
+      socket.close();
     };
   }, []);
 

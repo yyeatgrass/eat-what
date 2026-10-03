@@ -28,7 +28,9 @@ function timeZones(): string[] {
   const supported = (
     Intl as typeof Intl & { supportedValuesOf?: (key: string) => string[] }
   ).supportedValuesOf?.("timeZone");
-  return supported && supported.length > 0 ? supported : ["UTC"];
+  const zones = supported && supported.length > 0 ? [...supported] : [];
+  if (!zones.includes("UTC")) zones.unshift("UTC");
+  return zones.length > 0 ? zones : ["UTC"];
 }
 
 export default function App() {
