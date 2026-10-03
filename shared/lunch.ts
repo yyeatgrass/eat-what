@@ -32,6 +32,8 @@ export type RoomData = {
   picks: Picks;
   /** Weekend-only stand-in so a manual test can run the weekday draw. */
   debugKitchen: boolean;
+  /** Pinned calendar date. When set, the table uses this day instead of the clock. */
+  debugDate: { year: number; month: number; day: number } | null;
 };
 
 export type Phase =
@@ -64,6 +66,8 @@ export type PublicState = {
   debugKitchen: boolean;
   /** True when the weekend clock is standing in as Friday. */
   debugStandIn: boolean;
+  /** True when Next day has pinned the table to a chosen calendar date. */
+  debugPinned: boolean;
   realDateLabel: string | null;
   realWeekdayName: string | null;
 };
@@ -74,7 +78,8 @@ export type ClientMessage =
   | { type: "removeRestaurant"; id: string }
   | { type: "pick" }
   | { type: "heartbeat" }
-  | { type: "setDebugKitchen"; open: boolean };
+  | { type: "setDebugKitchen"; open: boolean }
+  | { type: "advanceDebugDay" };
 
 export type ServerMessage =
   | { type: "state"; state: PublicState }
@@ -109,6 +114,7 @@ export function emptyRoom(): RoomData {
     weekId: null,
     picks: {},
     debugKitchen: false,
+    debugDate: null,
   };
 }
 
@@ -191,28 +197,68 @@ export function formatCalendarLabel(calendar: CalendarDate): string {
   }).format(utc);
 }
 
-/** On a weekend with the debug kitchen open, Friday of the same week stands in. */
+export function calendarFromParts(year: number, month: number, day: number): CalendarDate {
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  const sundayBased = utc.getUTCDay();
+  const weekday = (sundayBased === 0 ? 6 : sundayBased - 1) as WeekdayIndex;
+  return {
+    year: utc.getUTCFullYear(),
+    month: utc.getUTCMonth() + 1,
+    day: utc.getUTCDate(),
+    weekday,
+  };
+}
+
+export function addCalendarDays(calendar: CalendarDate, days: number): CalendarDate {
+  return calendarFromParts(calendar.year, calendar.month, calendar.day + days);
+}
+
+function pinnedDebugDate(
+  debugDate: RoomData["debugDate"] | undefined,
+): RoomData["debugDate"] {
+  if (!debugDate) return null;
+  if (!Number.isInteger(debugDate.year) || !Number.isInteger(debugDate.month) || !Number.isInteger(debugDate.day)) {
+    return null;
+  }
+  return debugDate;
+}
+
+/** A pinned debug date wins. Otherwise a weekend debug kitchen stands in as Friday. */
 export function electionView(
   now: Date,
   timeZone: string,
   debugKitchen: boolean,
-): { real: CalendarDate; calendar: CalendarDate; standIn: boolean } {
+  debugDate?: RoomData["debugDate"],
+): { real: CalendarDate; calendar: CalendarDate; standIn: boolean; pinned: boolean } {
   const real = calendarInTimeZone(now, timeZone);
-  if (!debugKitchen || !isWeekend(real.weekday)) {
-    return { real, calendar: real, standIn: false };
+  const pinned = pinnedDebugDate(debugDate);
+  if (pinned) {
+    return {
+      real,
+      pinned: true,
+      standIn: false,
+      calendar: calendarFromParts(pinned.year, pinned.month, pinned.day),
+    };
   }
-  const friday = new Date(Date.UTC(real.year, real.month - 1, real.day));
-  friday.setUTCDate(friday.getUTCDate() - (real.weekday - 4));
-  return {
-    real,
-    standIn: true,
-    calendar: {
-      year: friday.getUTCFullYear(),
-      month: friday.getUTCMonth() + 1,
-      day: friday.getUTCDate(),
-      weekday: 4,
+  if (!debugKitchen || !isWeekend(real.weekday)) {
+    return { real, calendar: real, standIn: false, pinned: false };
+  }
+  const friday = addCalendarDays(real, 4 - real.weekday);
+  return { real, standIn: true, pinned: false, calendar: friday };
+}
+
+export function advanceDebugDay(room: RoomData, now: Date): RoomData {
+  if (!room.timezone || !isValidTimeZone(room.timezone)) return room;
+  const clock = electionView(now, room.timezone, room.debugKitchen === true, room.debugDate);
+  const next = addCalendarDays(clock.calendar, 1);
+  return withSyncedWeek(
+    {
+      ...room,
+      debugKitchen: true,
+      debugDate: { year: next.year, month: next.month, day: next.day },
     },
-  };
+    now,
+  ).room;
 }
 
 export function formatWeekOf(weekId: string): string {
@@ -237,7 +283,8 @@ export function withSyncedWeek(
   if (!room.timezone || !isValidTimeZone(room.timezone)) {
     return { room, reset: false };
   }
-  const weekId = weekIdInTimeZone(now, room.timezone);
+  const clock = electionView(now, room.timezone, room.debugKitchen === true, room.debugDate);
+  const weekId = weekIdFor(clock.calendar);
   if (room.weekId === weekId) return { room, reset: false };
   return {
     room: {
@@ -363,7 +410,12 @@ export function chooseLunch(
     return { ok: false, reason: "needs-timezone" };
   }
   const synced = withSyncedWeek(room, now).room;
-  const clock = electionView(now, synced.timezone as string, synced.debugKitchen === true);
+  const clock = electionView(
+    now,
+    synced.timezone as string,
+    synced.debugKitchen === true,
+    synced.debugDate,
+  );
   const day = clock.calendar.weekday;
   const result = elect({
     restaurants: synced.restaurants,
@@ -413,12 +465,13 @@ export function toPublicState(room: RoomData, now: Date): PublicState {
       phase: "needs-timezone",
       debugKitchen: room.debugKitchen === true,
       debugStandIn: false,
+      debugPinned: false,
       realDateLabel: null,
       realWeekdayName: null,
     };
   }
 
-  const clock = electionView(now, room.timezone, room.debugKitchen === true);
+  const clock = electionView(now, room.timezone, room.debugKitchen === true, room.debugDate);
   const calendar = clock.calendar;
   const weekId = weekIdFor(calendar);
   const picks = room.weekId === weekId ? room.picks : {};
@@ -444,12 +497,14 @@ export function toPublicState(room: RoomData, now: Date): PublicState {
     weekId,
     weekday: calendar.weekday,
     weekdayName: WEEKDAY_NAMES[calendar.weekday],
-    dateLabel: clock.standIn
-      ? formatCalendarLabel(calendar)
-      : formatDateLabel(now, room.timezone),
+    dateLabel:
+      clock.standIn || clock.pinned
+        ? formatCalendarLabel(calendar)
+        : formatDateLabel(now, room.timezone),
     isWeekend: weekend,
     debugKitchen: room.debugKitchen === true,
     debugStandIn: clock.standIn,
+    debugPinned: clock.pinned,
     realDateLabel: formatDateLabel(now, room.timezone),
     realWeekdayName: WEEKDAY_NAMES[clock.real.weekday],
     picks: ELECTION_DAYS.flatMap((day) => {

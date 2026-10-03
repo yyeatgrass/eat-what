@@ -2,6 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 
 import {
   addRestaurant,
+  advanceDebugDay,
   chooseLunch,
   emptyRoom,
   isValidTimeZone,
@@ -66,7 +67,19 @@ export class LunchRoom extends DurableObject {
     }
 
     if (parsed.type === "setDebugKitchen") {
-      const next = { ...room, debugKitchen: parsed.open };
+      const next = withSyncedWeek(
+        parsed.open
+          ? { ...room, debugKitchen: true, debugDate: null }
+          : { ...room, debugKitchen: false, debugDate: null },
+        now,
+      ).room;
+      await this.save(next);
+      this.broadcast(toPublicState(next, now));
+      return;
+    }
+
+    if (parsed.type === "advanceDebugDay") {
+      const next = advanceDebugDay(room, now);
       await this.save(next);
       this.broadcast(toPublicState(next, now));
       return;
@@ -164,7 +177,7 @@ function parseMessage(raw: string): ClientMessage | null {
   const value: unknown = JSON.parse(raw);
   if (!value || typeof value !== "object") return null;
   const type = readString(value, "type");
-  if (type === "heartbeat" || type === "pick") return { type };
+  if (type === "heartbeat" || type === "pick" || type === "advanceDebugDay") return { type };
   if (type === "setTimezone") {
     const timezone = readString(value, "timezone");
     return timezone === null ? null : { type, timezone };

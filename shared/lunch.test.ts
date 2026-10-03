@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   calendarInTimeZone,
+  advanceDebugDay,
   chooseLunch,
   elect,
   emptyRoom,
@@ -182,6 +183,46 @@ describe("election", () => {
     expect(chosen.ok).toBe(true);
     if (!chosen.ok) return;
     expect(chosen.room.picks[4]?.name).toBe("Noodle Room");
+  });
+
+  it("steps to the next day and clears picks when Monday starts", () => {
+    const saturday = new Date("2026-10-03T12:00:00.000Z");
+    const friday = {
+      ...emptyRoom(),
+      timezone: "UTC",
+      weekId: "2026-09-28",
+      debugKitchen: true,
+      restaurants: places,
+      picks: { 4: { restaurantId: "a", name: "Noodle Room" } },
+    };
+
+    const onSaturday = advanceDebugDay(friday, saturday);
+    expect(onSaturday.debugDate).toEqual({ year: 2026, month: 10, day: 3 });
+    expect(toPublicState(onSaturday, saturday)).toMatchObject({
+      phase: "weekend",
+      weekdayName: "Saturday",
+      dateLabel: "Saturday, October 3, 2026",
+      weekId: "2026-09-28",
+      debugPinned: true,
+    });
+    expect(onSaturday.picks[4]?.name).toBe("Noodle Room");
+
+    const onSunday = advanceDebugDay(onSaturday, saturday);
+    expect(toPublicState(onSunday, saturday).weekdayName).toBe("Sunday");
+
+    const onMonday = advanceDebugDay(onSunday, saturday);
+    const monday = toPublicState(onMonday, saturday);
+    expect(monday.weekdayName).toBe("Monday");
+    expect(monday.dateLabel).toBe("Monday, October 5, 2026");
+    expect(monday.weekId).toBe("2026-10-05");
+    expect(monday.phase).toBe("ready");
+    expect(monday.picks).toEqual([]);
+    expect(onMonday.restaurants).toEqual(places);
+
+    const chosen = chooseLunch(onMonday, saturday, () => 0);
+    expect(chosen.ok).toBe(true);
+    if (!chosen.ok) return;
+    expect(chosen.room.picks[0]?.name).toBe("Noodle Room");
   });
 
   it("keeps Saturday closed when the debug kitchen is off", () => {
