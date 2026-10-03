@@ -30,6 +30,8 @@ export type RoomData = {
   restaurants: Restaurant[];
   weekId: string | null;
   picks: Picks;
+  /** Weekend-only stand-in so a manual test can run the weekday draw. */
+  debugKitchen: boolean;
 };
 
 export type Phase =
@@ -59,6 +61,11 @@ export type PublicState = {
   onlyOption: boolean;
   exhausted: boolean;
   phase: Phase;
+  debugKitchen: boolean;
+  /** True when the weekend clock is standing in as Friday. */
+  debugStandIn: boolean;
+  realDateLabel: string | null;
+  realWeekdayName: string | null;
 };
 
 export type ClientMessage =
@@ -66,7 +73,8 @@ export type ClientMessage =
   | { type: "addRestaurant"; name: string }
   | { type: "removeRestaurant"; id: string }
   | { type: "pick" }
-  | { type: "heartbeat" };
+  | { type: "heartbeat" }
+  | { type: "setDebugKitchen"; open: boolean };
 
 export type ServerMessage =
   | { type: "state"; state: PublicState }
@@ -100,6 +108,7 @@ export function emptyRoom(): RoomData {
     restaurants: [],
     weekId: null,
     picks: {},
+    debugKitchen: false,
   };
 }
 
@@ -169,6 +178,41 @@ export function formatDateLabel(now: Date, timeZone: string): string {
     day: "numeric",
     year: "numeric",
   }).format(now);
+}
+
+export function formatCalendarLabel(calendar: CalendarDate): string {
+  const utc = new Date(Date.UTC(calendar.year, calendar.month - 1, calendar.day, 12));
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(utc);
+}
+
+/** On a weekend with the debug kitchen open, Friday of the same week stands in. */
+export function electionView(
+  now: Date,
+  timeZone: string,
+  debugKitchen: boolean,
+): { real: CalendarDate; calendar: CalendarDate; standIn: boolean } {
+  const real = calendarInTimeZone(now, timeZone);
+  if (!debugKitchen || !isWeekend(real.weekday)) {
+    return { real, calendar: real, standIn: false };
+  }
+  const friday = new Date(Date.UTC(real.year, real.month - 1, real.day));
+  friday.setUTCDate(friday.getUTCDate() - (real.weekday - 4));
+  return {
+    real,
+    standIn: true,
+    calendar: {
+      year: friday.getUTCFullYear(),
+      month: friday.getUTCMonth() + 1,
+      day: friday.getUTCDate(),
+      weekday: 4,
+    },
+  };
 }
 
 export function formatWeekOf(weekId: string): string {
@@ -319,8 +363,8 @@ export function chooseLunch(
     return { ok: false, reason: "needs-timezone" };
   }
   const synced = withSyncedWeek(room, now).room;
-  const calendar = calendarInTimeZone(now, synced.timezone as string);
-  const day = calendar.weekday;
+  const clock = electionView(now, synced.timezone as string, synced.debugKitchen === true);
+  const day = clock.calendar.weekday;
   const result = elect({
     restaurants: synced.restaurants,
     picks: synced.picks,
@@ -367,10 +411,15 @@ export function toPublicState(room: RoomData, now: Date): PublicState {
       onlyOption: false,
       exhausted: false,
       phase: "needs-timezone",
+      debugKitchen: room.debugKitchen === true,
+      debugStandIn: false,
+      realDateLabel: null,
+      realWeekdayName: null,
     };
   }
 
-  const calendar = calendarInTimeZone(now, room.timezone);
+  const clock = electionView(now, room.timezone, room.debugKitchen === true);
+  const calendar = clock.calendar;
   const weekId = weekIdFor(calendar);
   const picks = room.weekId === weekId ? room.picks : {};
   const weekend = isWeekend(calendar.weekday);
@@ -395,8 +444,14 @@ export function toPublicState(room: RoomData, now: Date): PublicState {
     weekId,
     weekday: calendar.weekday,
     weekdayName: WEEKDAY_NAMES[calendar.weekday],
-    dateLabel: formatDateLabel(now, room.timezone),
+    dateLabel: clock.standIn
+      ? formatCalendarLabel(calendar)
+      : formatDateLabel(now, room.timezone),
     isWeekend: weekend,
+    debugKitchen: room.debugKitchen === true,
+    debugStandIn: clock.standIn,
+    realDateLabel: formatDateLabel(now, room.timezone),
+    realWeekdayName: WEEKDAY_NAMES[clock.real.weekday],
     picks: ELECTION_DAYS.flatMap((day) => {
       const pick = picks[day];
       return pick

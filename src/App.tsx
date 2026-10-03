@@ -59,6 +59,22 @@ export default function App() {
           The table connection dropped. Reconnecting…
         </p>
       ) : null}
+      {state?.debugStandIn ? (
+        <div className="mx-auto mt-4 flex w-full max-w-5xl flex-col gap-3 px-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <p className="rounded-2xl bg-accent px-4 py-3 text-sm text-accent-foreground">
+            Debug kitchen is open. It's {state.realDateLabel}, so {state.weekdayName} is standing
+            in and you can test the draw.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={status !== "live"}
+            onClick={() => send({ type: "setDebugKitchen", open: false })}
+          >
+            Close the kitchen
+          </Button>
+        </div>
+      ) : null}
       <main className="mx-auto grid w-full max-w-5xl gap-4 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(17rem,0.85fr)]">
         <Decision status={status} state={state} notice={notice} send={send} />
         <WeekStrip state={state} />
@@ -180,6 +196,20 @@ function Decision({
           {state.weekdayName} doesn't get a draw. The restaurant list stays. Monday opens a new
           week, and every place is eligible again.
         </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <Button
+            type="button"
+            size="lg"
+            className="h-12 px-6 text-base"
+            disabled={status !== "live"}
+            onClick={() => send({ type: "setDebugKitchen", open: true })}
+          >
+            Open the kitchen
+          </Button>
+          <p className="text-sm text-muted-foreground">
+            Opens Friday of this week so you can test the draw.
+          </p>
+        </div>
       </Ticket>
     );
   }
@@ -315,7 +345,11 @@ function WeekStrip({ state }: { state: PublicState | null }) {
           );
         })}
       </ol>
-      {state?.isWeekend ? (
+      {state?.debugStandIn ? (
+        <p className="mt-4 text-sm text-muted-foreground">
+          Debug kitchen: {state.weekdayName} stands in for {state.realWeekdayName}.
+        </p>
+      ) : state?.isWeekend ? (
         <p className="mt-4 text-sm text-muted-foreground">
           No election on {state.weekdayName}. Monday through Friday are the lunch days.
         </p>

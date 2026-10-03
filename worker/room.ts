@@ -65,6 +65,13 @@ export class LunchRoom extends DurableObject {
       return;
     }
 
+    if (parsed.type === "setDebugKitchen") {
+      const next = { ...room, debugKitchen: parsed.open };
+      await this.save(next);
+      this.broadcast(toPublicState(next, now));
+      return;
+    }
+
     if (parsed.type === "setTimezone") {
       if (!isValidTimeZone(parsed.timezone)) {
         this.sendError(ws, "timezone", "Pick a valid timezone.");
@@ -169,6 +176,11 @@ function parseMessage(raw: string): ClientMessage | null {
   if (type === "removeRestaurant") {
     const id = readString(value, "id");
     return id === null ? null : { type, id };
+  }
+  if (type === "setDebugKitchen") {
+    if (!("open" in value)) return null;
+    const open = (value as Record<string, unknown>).open;
+    return typeof open === "boolean" ? { type, open } : null;
   }
   return null;
 }

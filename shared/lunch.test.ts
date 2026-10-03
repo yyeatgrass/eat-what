@@ -5,6 +5,7 @@ import {
   chooseLunch,
   elect,
   emptyRoom,
+  toPublicState,
   type Restaurant,
   weekIdFor,
   weekIdInTimeZone,
@@ -155,6 +156,44 @@ describe("election", () => {
       restaurant: only[0],
       onlyOption: true,
     });
+  });
+
+  it("opens a Saturday kitchen by standing in as Friday", () => {
+    const room = {
+      ...emptyRoom(),
+      timezone: "UTC",
+      weekId: "2026-09-28",
+      debugKitchen: true,
+      restaurants: places,
+    };
+    const saturday = new Date("2026-10-03T12:00:00.000Z");
+    const state = toPublicState(room, saturday);
+    expect(state.phase).toBe("ready");
+    expect(state.debugStandIn).toBe(true);
+    expect(state.weekdayName).toBe("Friday");
+    expect(state.dateLabel).toBe("Friday, October 2, 2026");
+    expect(state.realWeekdayName).toBe("Saturday");
+    expect(state.weekId).toBe("2026-09-28");
+
+    const sunday = new Date("2026-10-04T12:00:00.000Z");
+    expect(toPublicState(room, sunday).dateLabel).toBe("Friday, October 2, 2026");
+
+    const chosen = chooseLunch(room, saturday, () => 0);
+    expect(chosen.ok).toBe(true);
+    if (!chosen.ok) return;
+    expect(chosen.room.picks[4]?.name).toBe("Noodle Room");
+  });
+
+  it("keeps Saturday closed when the debug kitchen is off", () => {
+    const room = {
+      ...emptyRoom(),
+      timezone: "UTC",
+      weekId: "2026-09-28",
+      restaurants: places,
+    };
+    const saturday = new Date("2026-10-03T12:00:00.000Z");
+    expect(toPublicState(room, saturday).phase).toBe("weekend");
+    expect(chooseLunch(room, saturday, () => 0)).toEqual({ ok: false, reason: "weekend" });
   });
 
   it("refuses the weekend", () => {
