@@ -19,5 +19,7 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 43123,
     strictPort: true,
+    // Quick tunnels and phone testing send a public Host header.
+    allowedHosts: [".trycloudflare.com"],
   },
 });

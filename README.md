@@ -13,9 +13,21 @@ npm install
 npm run dev
 ```
 
-Open [http://127.0.0.1:43123](http://127.0.0.1:43123).
+Open [http://127.0.0.1:43123](http://127.0.0.1:43123) on the same computer that is running the dev server. That address is not reachable from a phone or another machine.
 
 `npm test` checks the weekday, week, and election rules.
+
+## Open it on a phone or another computer
+
+With `npm run dev` still running, start a temporary public tunnel:
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:43123
+```
+
+Install [cloudflared](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/) first if you do not have it. The command prints an `https://….trycloudflare.com` link. Open that link on a phone, laptop, or any other device. Everyone on it shares one lunch room. The link works only while both the dev server and the tunnel stay running.
+
+For an address that stays up after you close the laptop, deploy to your Cloudflare account below.
 
 ## Deploy
 
