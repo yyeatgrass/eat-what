@@ -61,7 +61,7 @@ Or create an API token in the Cloudflare dashboard ([API tokens](https://dash.cl
 npm run deploy
 ```
 
-That builds the client and worker, then runs `wrangler deploy`. The worker name is `eat-what`.
+That builds the client and worker, then deploys the built worker. The worker name is `eat-what`. `eatwhatlunch.cn` and `www.eatwhatlunch.cn` are already attached, so a later deploy keeps those hostnames.
 
 ### eatwhatlunch.cn
 

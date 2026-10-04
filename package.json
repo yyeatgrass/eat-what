@@ -9,7 +9,7 @@
     "test": "vitest run",
     "lint": "oxlint",
     "preview": "vite preview --host 0.0.0.0 --port 43123 --strictPort",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy -c dist/eat_what/wrangler.json"
   },
   "dependencies": {
     "@fontsource/fraunces": "^5.3.0",

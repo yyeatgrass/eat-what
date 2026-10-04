@@ -7,6 +7,10 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/ws"]
   },
+  "routes": [
+    { "pattern": "eatwhatlunch.cn", "custom_domain": true },
+    { "pattern": "www.eatwhatlunch.cn", "custom_domain": true }
+  ],
   "durable_objects": {
     "bindings": [
       {
