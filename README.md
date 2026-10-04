@@ -65,11 +65,13 @@ That builds the client and worker, then runs `wrangler deploy`. The worker name 
 
 ### eatwhatlunch.cn
 
-The address to open is `https://eatwhatlunch.cn`. Add the domain to the same Cloudflare account, then attach it after the first deploy:
+The address to open is `https://eatwhatlunch.cn`. The name is registered at 阿里云万网 and currently uses `dns29.hichina.com` and `dns30.hichina.com`. Move DNS to the same Cloudflare account, deploy the worker, then attach the hostnames.
 
-1. In the Cloudflare dashboard, add the site `eatwhatlunch.cn` and switch the domain to the nameservers Cloudflare shows.
-2. Run `npm run deploy`.
-3. Open the `eat-what` worker, go to Settings, Domains & Routes, and add `eatwhatlunch.cn` and `www.eatwhatlunch.cn` as custom domains.
+1. In the [Cloudflare dashboard](https://dash.cloudflare.com/), choose **Domains**, then **Onboard a domain**. Enter `eatwhatlunch.cn` and pick the Free plan. The DNS scan can be empty. Continue until Cloudflare shows two nameservers.
+2. In the [阿里云域名控制台](https://dc.console.aliyun.com/next/index#/domain-list/all), open `eatwhatlunch.cn`, then **管理 → DNS 管理 → DNS修改 → 修改 DNS服务器**. Replace the two `hichina.com` servers with the two nameservers from Cloudflare.
+3. Wait until the Cloudflare zone status is **Active**. That is often a few minutes and can take longer.
+4. Run `npm run deploy`.
+5. Open the `eat-what` worker, go to **Settings → Domains & Routes → Add → Custom Domain**, and add `eatwhatlunch.cn` and `www.eatwhatlunch.cn`.
 
 Cloudflare creates the DNS records and the certificate. The lunch list on a deployed worker is a new room. It does not copy the list from a temporary tunnel.
 
