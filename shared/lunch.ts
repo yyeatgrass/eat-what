@@ -24,6 +24,8 @@ export type Restaurant = {
 export type DayPick = {
   restaurantId: string;
   name: string;
+  /** Set when the table locks today's result. */
+  confirmed?: boolean;
 };
 
 export type Picks = Partial<Record<ElectionDay, DayPick>>;
@@ -60,6 +62,7 @@ export type PublicPick = {
   weekday: ElectionDay;
   restaurantId: string;
   name: string;
+  confirmed: boolean;
 };
 
 export type PublicState = {
@@ -91,6 +94,7 @@ export type ClientMessage =
   | { type: "removeRestaurant"; id: string }
   | { type: "removeFromToday"; id: string }
   | { type: "pick" }
+  | { type: "confirm" }
   | { type: "heartbeat" }
   | { type: "setDebugKitchen"; open: boolean }
   | { type: "advanceDebugDay" };
@@ -104,6 +108,8 @@ export type ServerMessage =
     };
 
 export type ElectionFailure = "weekend" | "empty" | "exhausted" | "today-empty";
+
+export type ChooseRefusal = ElectionFailure | "needs-timezone" | "confirmed" | "no-pick";
 
 export type ElectionResult =
   | { ok: false; reason: ElectionFailure }
@@ -466,8 +472,16 @@ export function clearRestaurantFromPicks(picks: Picks, restaurantId: string): Pi
   return next;
 }
 
+export function choiceLocked(room: RoomData, restaurantId: string): boolean {
+  return ELECTION_DAYS.some((day) => {
+    const pick = room.picks[day];
+    return pick?.restaurantId === restaurantId && pick.confirmed === true;
+  });
+}
+
 export function removeRestaurant(room: RoomData, id: string): RoomData {
   if (!room.restaurants.some((restaurant) => restaurant.id === id)) return room;
+  if (choiceLocked(room, id)) return room;
   return {
     ...room,
     restaurants: room.restaurants.filter((restaurant) => restaurant.id !== id),
@@ -482,6 +496,8 @@ export function removeRestaurant(room: RoomData, id: string): RoomData {
 export function removeFromToday(room: RoomData, id: string): RoomData {
   if (!room.todayList?.ids.includes(id)) return room;
   const weekday = room.todayList.weekday;
+  const locked = room.picks[weekday];
+  if (locked?.confirmed === true && locked.restaurantId === id) return room;
   const picks = { ...room.picks };
   if (picks[weekday]?.restaurantId === id) delete picks[weekday];
   return {
@@ -499,7 +515,7 @@ export function chooseLunch(
   now: Date,
   rng: () => number,
 ):
-  | { ok: false; reason: ElectionFailure | "needs-timezone" }
+  | { ok: false; reason: ChooseRefusal }
   | { ok: true; room: RoomData; onlyOption: boolean } {
   if (!room.timezone || !isValidTimeZone(room.timezone)) {
     return { ok: false, reason: "needs-timezone" };
@@ -514,6 +530,9 @@ export function chooseLunch(
   const day = clock.calendar.weekday;
   if (isWeekend(day)) return { ok: false, reason: "weekend" };
   if (synced.restaurants.length === 0) return { ok: false, reason: "empty" };
+  if (synced.picks[day as ElectionDay]?.confirmed === true) {
+    return { ok: false, reason: "confirmed" };
+  }
   const todayRestaurants = restaurantsForToday(synced, now);
   if (todayRestaurants.length === 0) {
     const selectable = selectableRestaurants(synced.restaurants, synced.picks, day);
@@ -537,7 +556,39 @@ export function chooseLunch(
         [day as ElectionDay]: {
           restaurantId: result.restaurant.id,
           name: result.restaurant.name,
+          confirmed: false,
         },
+      },
+    },
+  };
+}
+
+export function confirmToday(
+  room: RoomData,
+  now: Date,
+): { ok: false; reason: ChooseRefusal } | { ok: true; room: RoomData } {
+  if (!room.timezone || !isValidTimeZone(room.timezone)) {
+    return { ok: false, reason: "needs-timezone" };
+  }
+  const synced = prepareRoom(room, now).room;
+  const clock = electionView(
+    now,
+    synced.timezone as string,
+    synced.debugKitchen === true,
+    synced.debugDate,
+  );
+  const day = clock.calendar.weekday;
+  if (isWeekend(day)) return { ok: false, reason: "weekend" };
+  const pick = synced.picks[day as ElectionDay];
+  if (!pick) return { ok: false, reason: "no-pick" };
+  if (pick.confirmed === true) return { ok: true, room: synced };
+  return {
+    ok: true,
+    room: {
+      ...synced,
+      picks: {
+        ...synced.picks,
+        [day as ElectionDay]: { ...pick, confirmed: true },
       },
     },
   };
@@ -583,8 +634,10 @@ export function toPublicState(room: RoomData, now: Date): PublicState {
   const todayPickRaw =
     !weekend && calendar.weekday <= 4 ? (picks[calendar.weekday as ElectionDay] ?? null) : null;
   const todayPick =
-    todayPickRaw && todayRestaurants.some((restaurant) => restaurant.id === todayPickRaw.restaurantId)
-      ? todayPickRaw
+    todayPickRaw &&
+    (todayPickRaw.confirmed === true ||
+      todayRestaurants.some((restaurant) => restaurant.id === todayPickRaw.restaurantId))
+      ? { ...todayPickRaw, confirmed: todayPickRaw.confirmed === true }
       : null;
   const selectable = weekend
     ? []
@@ -620,7 +673,14 @@ export function toPublicState(room: RoomData, now: Date): PublicState {
     picks: ELECTION_DAYS.flatMap((day) => {
       const pick = picks[day];
       return pick
-        ? [{ weekday: day, restaurantId: pick.restaurantId, name: pick.name }]
+        ? [
+            {
+              weekday: day,
+              restaurantId: pick.restaurantId,
+              name: pick.name,
+              confirmed: pick.confirmed === true,
+            },
+          ]
         : [];
     }),
     todayRestaurants,
@@ -631,10 +691,12 @@ export function toPublicState(room: RoomData, now: Date): PublicState {
   };
 }
 
-export const PICK_ERRORS: Record<ElectionFailure | "needs-timezone", string> = {
+export const PICK_ERRORS: Record<ChooseRefusal, string> = {
   weekend: "周末不选餐厅。",
   empty: "先加一家餐厅，再抽今天吃什么。",
   exhausted: "这周每家餐厅都已经选过了。",
   "today-empty": "今天的列表是空的，总列表没有变。",
   "needs-timezone": "先确认时区，再抽今天吃什么。",
+  confirmed: "今天已经确定了，不能再改。",
+  "no-pick": "先抽出今天的午饭，再确定。",
 };

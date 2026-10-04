@@ -216,6 +216,7 @@ function Decision({
   }
 
   const picked = state.phase === "picked" && state.todayPick;
+  const confirmed = Boolean(picked && state.todayPick?.confirmed);
 
   return (
     <Ticket>
@@ -226,7 +227,9 @@ function Decision({
           <h2 className="font-heading text-5xl leading-[1.05] font-semibold text-balance sm:text-6xl">
             {state.todayPick?.name}
           </h2>
-          <p className="text-muted-foreground">这桌今天就吃这家。</p>
+          <p className="text-muted-foreground">
+            {confirmed ? "已经确定，今天不能再改。" : "这桌今天就吃这家。确定之后就不能再改。"}
+          </p>
         </div>
       ) : (
         <div>
@@ -238,12 +241,13 @@ function Decision({
           </p>
         </div>
       )}
-      {state.onlyOption ? (
+      {state.onlyOption && !confirmed ? (
         <p className="max-w-md rounded-2xl bg-accent px-4 py-3 text-sm text-accent-foreground">
           这周还没选过的，只剩这一家。
           {picked ? "再抽一次还会抽到它。" : ""}
         </p>
       ) : null}
+      {confirmed ? null : (
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <Button
           type="button"
@@ -254,10 +258,23 @@ function Decision({
         >
           {picked ? "再抽一家" : "抽一家餐厅"}
         </Button>
+        {picked ? (
+          <Button
+            type="button"
+            size="lg"
+            variant="secondary"
+            className="h-12 px-6 text-base"
+            disabled={status !== "live"}
+            onClick={() => send({ type: "confirm" })}
+          >
+            确定今天的选择
+          </Button>
+        ) : null}
         {status !== "live" ? (
           <p className="text-sm text-muted-foreground">重新连上之后才能抽。</p>
         ) : null}
       </div>
+      )}
       {pickError ? (
         <p role="alert" className="text-sm text-destructive">
           {pickError}
@@ -286,7 +303,7 @@ function Eyebrow({ children }: { children: ReactNode }) {
 }
 
 function WeekStrip({ state }: { state: PublicState | null }) {
-  const picks = new Map(state?.picks.map((pick) => [pick.weekday, pick.name]) ?? []);
+  const picks = new Map(state?.picks.map((pick) => [pick.weekday, pick]) ?? []);
   return (
     <section className="rounded-3xl bg-card p-5 ring-1 ring-foreground/10">
       <div className="mb-4">
@@ -297,7 +314,8 @@ function WeekStrip({ state }: { state: PublicState | null }) {
       </div>
       <ol className="flex flex-col gap-2">
         {DAY_LABELS.map((label, index) => {
-          const name = picks.get(index as 0 | 1 | 2 | 3 | 4);
+          const pick = picks.get(index as 0 | 1 | 2 | 3 | 4);
+          const name = pick?.name;
           const today = state?.weekday === index;
           return (
             <li
@@ -312,6 +330,9 @@ function WeekStrip({ state }: { state: PublicState | null }) {
               </span>
               <span className={`text-right text-sm ${name ? "font-heading text-base font-medium" : "text-muted-foreground"}`}>
                 {name ?? "还没定"}
+                {pick?.confirmed ? (
+                  <span className="mt-0.5 block text-[10px] tracking-wide text-primary">已定</span>
+                ) : null}
               </span>
             </li>
           );
@@ -341,6 +362,7 @@ function TodayList({
 }) {
   const today = state?.todayRestaurants ?? EMPTY_RESTAURANTS;
   const weekend = state?.isWeekend ?? false;
+  const lockedId = state?.todayPick?.confirmed ? state.todayPick.restaurantId : null;
 
   return (
     <section className="rounded-3xl bg-card p-5 ring-1 ring-foreground/10 sm:p-6">
@@ -361,6 +383,9 @@ function TodayList({
           {today.map((restaurant) => (
             <li key={restaurant.id} className="flex items-center justify-between gap-3 py-2">
               <span className="font-heading text-lg font-medium">{restaurant.name}</span>
+              {lockedId === restaurant.id ? (
+                <span className="px-2.5 text-sm text-primary">已定</span>
+              ) : (
               <Button
                 type="button"
                 variant="ghost"
@@ -369,6 +394,7 @@ function TodayList({
               >
                 去掉
               </Button>
+              )}
             </li>
           ))}
         </ul>
@@ -395,6 +421,9 @@ function RestaurantList({
   const serverError = notice?.scope === "restaurant" ? notice.message : null;
   const error = localError ?? serverError;
   const restaurants = state ? state.restaurants : EMPTY_RESTAURANTS;
+  const lockedIds = new Set(
+    (state?.picks ?? []).filter((pick) => pick.confirmed).map((pick) => pick.restaurantId),
+  );
 
   if (
     pendingName &&
@@ -422,6 +451,9 @@ function RestaurantList({
           {restaurants.map((restaurant) => (
             <li key={restaurant.id} className="flex items-center justify-between gap-3 py-2">
               <span className="font-heading text-lg font-medium">{restaurant.name}</span>
+              {lockedIds.has(restaurant.id) ? (
+                <span className="px-2.5 text-sm text-primary">已定</span>
+              ) : (
               <Button
                 type="button"
                 variant="ghost"
@@ -430,6 +462,7 @@ function RestaurantList({
               >
                 去掉
               </Button>
+              )}
             </li>
           ))}
         </ul>

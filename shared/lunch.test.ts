@@ -4,6 +4,7 @@ import {
   calendarInTimeZone,
   advanceDebugDay,
   chooseLunch,
+  confirmToday,
   elect,
   emptyRoom,
   prepareRoom,
@@ -333,6 +334,82 @@ describe("election", () => {
     const next = removeRestaurant(room, "b");
     expect(next.todayList?.ids).toEqual(["a", "c"]);
     expect(next.restaurants.map((restaurant) => restaurant.id)).toEqual(["a", "c"]);
+  });
+
+  it("locks today's choice after it is confirmed", () => {
+    const wednesday = new Date("2026-09-30T04:00:00.000Z");
+    const room = prepareRoom(
+      {
+        ...emptyRoom(),
+        timezone: "Asia/Shanghai",
+        weekId: "2026-09-28",
+        restaurants: places,
+      },
+      wednesday,
+    ).room;
+    const chosen = chooseLunch(room, wednesday, () => 0);
+    expect(chosen.ok).toBe(true);
+    if (!chosen.ok) return;
+    expect(chosen.room.picks[2]?.confirmed).toBe(false);
+    expect(confirmToday(chosen.room, new Date("2026-10-03T12:00:00.000Z"))).toEqual({
+      ok: false,
+      reason: "weekend",
+    });
+
+    const confirmed = confirmToday(chosen.room, wednesday);
+    expect(confirmed.ok).toBe(true);
+    if (!confirmed.ok) return;
+    expect(confirmed.room.picks[2]).toMatchObject({
+      restaurantId: "a",
+      name: "Noodle Room",
+      confirmed: true,
+    });
+    expect(toPublicState(confirmed.room, wednesday).todayPick).toMatchObject({
+      name: "Noodle Room",
+      confirmed: true,
+    });
+    expect(chooseLunch(confirmed.room, wednesday, () => 0.99)).toEqual({
+      ok: false,
+      reason: "confirmed",
+    });
+    expect(removeFromToday(confirmed.room, "a")).toBe(confirmed.room);
+    expect(removeRestaurant(confirmed.room, "a")).toBe(confirmed.room);
+    expect(removeFromToday(confirmed.room, "b").todayList?.ids).toEqual(["a", "c"]);
+
+    const again = confirmToday(confirmed.room, wednesday);
+    expect(again.ok).toBe(true);
+    if (!again.ok) return;
+    expect(again.room.picks[2]?.confirmed).toBe(true);
+
+    const thursday = prepareRoom(
+      {
+        ...confirmed.room,
+        debugKitchen: true,
+        debugDate: { year: 2026, month: 10, day: 1 },
+      },
+      wednesday,
+    ).room;
+    expect(thursday.picks[2]?.confirmed).toBe(true);
+    expect(toPublicState(thursday, wednesday).todayPick).toBeNull();
+    const next = chooseLunch(thursday, wednesday, () => 0);
+    expect(next.ok).toBe(true);
+    if (!next.ok) return;
+    expect(next.room.picks[3]?.confirmed).toBe(false);
+    expect(next.room.picks[3]?.name).not.toBe("Noodle Room");
+  });
+
+  it("refuses to confirm a day that has no pick", () => {
+    const wednesday = new Date("2026-09-30T04:00:00.000Z");
+    const room = prepareRoom(
+      {
+        ...emptyRoom(),
+        timezone: "Asia/Shanghai",
+        weekId: "2026-09-28",
+        restaurants: places,
+      },
+      wednesday,
+    ).room;
+    expect(confirmToday(room, wednesday)).toEqual({ ok: false, reason: "no-pick" });
   });
 
   it("refuses an empty list", () => {

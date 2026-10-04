@@ -3,7 +3,9 @@ import { DurableObject } from "cloudflare:workers";
 import {
   addRestaurant,
   advanceDebugDay,
+  choiceLocked,
   chooseLunch,
+  confirmToday,
   emptyRoom,
   PICK_ERRORS,
   ROOM_TIME_ZONE,
@@ -108,7 +110,13 @@ export class LunchRoom extends DurableObject {
     }
 
     if (parsed.type === "removeRestaurant") {
-      const next = prepareRoom(removeRestaurant(room, parsed.id), now).room;
+      const ready = prepareRoom(room, now).room;
+      if (choiceLocked(ready, parsed.id)) {
+        if (ready !== room) await this.save(ready);
+        this.sendError(ws, "pick", PICK_ERRORS.confirmed);
+        return;
+      }
+      const next = prepareRoom(removeRestaurant(ready, parsed.id), now).room;
       await this.save(next);
       this.broadcast(toPublicState(next, now));
       return;
@@ -116,10 +124,28 @@ export class LunchRoom extends DurableObject {
 
     if (parsed.type === "removeFromToday") {
       const ready = prepareRoom(room, now).room;
+      const weekday = ready.todayList?.weekday;
+      const locked = weekday === undefined ? undefined : ready.picks[weekday];
+      if (locked?.confirmed === true && locked.restaurantId === parsed.id) {
+        if (ready !== room) await this.save(ready);
+        this.sendError(ws, "pick", PICK_ERRORS.confirmed);
+        return;
+      }
       const next = removeFromToday(ready, parsed.id);
       if (next !== ready) await this.save(next);
       else if (ready !== room) await this.save(ready);
       this.broadcast(toPublicState(next, now));
+      return;
+    }
+
+    if (parsed.type === "confirm") {
+      const outcome = confirmToday(room, now);
+      if (!outcome.ok) {
+        this.sendError(ws, "pick", PICK_ERRORS[outcome.reason]);
+        return;
+      }
+      await this.save(outcome.room);
+      this.broadcast(toPublicState(outcome.room, now));
       return;
     }
 
@@ -188,7 +214,9 @@ function parseMessage(raw: string): ClientMessage | null {
   const value: unknown = JSON.parse(raw);
   if (!value || typeof value !== "object") return null;
   const type = readString(value, "type");
-  if (type === "heartbeat" || type === "pick" || type === "advanceDebugDay") return { type };
+  if (type === "heartbeat" || type === "pick" || type === "confirm" || type === "advanceDebugDay") {
+    return { type };
+  }
   if (type === "setTimezone") {
     const timezone = readString(value, "timezone");
     return timezone === null ? null : { type, timezone };
