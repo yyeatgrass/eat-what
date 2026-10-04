@@ -63,7 +63,7 @@ export default function App() {
         <div className="mx-auto mt-4 flex w-full max-w-5xl flex-col gap-3 px-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
           <p className="rounded-2xl bg-accent px-4 py-3 text-sm text-accent-foreground">
             {state.debugStandIn
-              ? `Debug kitchen is open. It's ${state.realDateLabel}, so ${state.weekdayName} is standing in and you can test the draw.`
+              ? `Restaurant picking is open for a test. It's ${state.realDateLabel}, so ${state.weekdayName} is standing in.`
               : `Debug clock is on ${state.dateLabel}. The real date is ${state.realDateLabel}.`}
           </p>
           <div className="flex flex-wrap gap-2">
@@ -80,7 +80,7 @@ export default function App() {
               disabled={status !== "live"}
               onClick={() => send({ type: "setDebugKitchen", open: false })}
             >
-              Close the kitchen
+              Close the test
             </Button>
           </div>
         </div>
@@ -200,11 +200,11 @@ function Decision({
       <Ticket>
         <Eyebrow>{state.dateLabel}</Eyebrow>
         <h2 className="font-heading text-4xl leading-tight font-semibold text-balance">
-          The kitchen is closed for the election.
+          No restaurant is chosen today.
         </h2>
         <p className="max-w-md text-muted-foreground">
-          {state.weekdayName} doesn't get a draw. The restaurant list stays. Monday opens a new
-          week, and every place is eligible again.
+          {state.weekdayName} doesn't get a restaurant. The list stays. Monday opens a new week,
+          and every place is eligible again.
         </p>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <Button
@@ -214,7 +214,7 @@ function Decision({
             disabled={status !== "live"}
             onClick={() => send({ type: "setDebugKitchen", open: true })}
           >
-            Open the kitchen
+            Pick a restaurant
           </Button>
           {state.debugPinned ? null : (
             <Button
@@ -240,7 +240,7 @@ function Decision({
         <h2 className="font-heading text-4xl leading-tight font-semibold">Nothing to draw yet.</h2>
         <p className="max-w-md text-muted-foreground">
           Add the places this table actually goes. Once a name is on the list, anyone here can
-          pick today's lunch.
+          pick today's restaurant.
         </p>
       </Ticket>
     );
@@ -299,7 +299,7 @@ function Decision({
           disabled={status !== "live"}
           onClick={() => send({ type: "pick" })}
         >
-          {picked ? "Pick again" : "Pick lunch"}
+          {picked ? "Pick another restaurant" : "Pick a restaurant"}
         </Button>
         {status !== "live" ? (
           <p className="text-sm text-muted-foreground">Reconnect to pick for the table.</p>
@@ -366,11 +366,11 @@ function WeekStrip({ state }: { state: PublicState | null }) {
       </ol>
       {state?.debugStandIn ? (
         <p className="mt-4 text-sm text-muted-foreground">
-          Debug kitchen: {state.weekdayName} stands in for {state.realWeekdayName}.
+          Test pick: {state.weekdayName} stands in for {state.realWeekdayName}.
         </p>
       ) : state?.isWeekend ? (
         <p className="mt-4 text-sm text-muted-foreground">
-          No election on {state.weekdayName}. Monday through Friday are the lunch days.
+          No restaurant on {state.weekdayName}. Monday through Friday are the lunch days.
         </p>
       ) : null}
     </section>

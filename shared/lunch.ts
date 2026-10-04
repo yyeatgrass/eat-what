@@ -521,7 +521,7 @@ export function toPublicState(room: RoomData, now: Date): PublicState {
 }
 
 export const PICK_ERRORS: Record<ElectionFailure | "needs-timezone", string> = {
-  weekend: "It's the weekend, so there's no lunch election.",
+  weekend: "It's the weekend, so no restaurant is chosen.",
   empty: "Add a restaurant before picking lunch.",
   exhausted: "Every restaurant was already chosen earlier this week.",
   "needs-timezone": "Confirm a timezone before picking lunch.",
