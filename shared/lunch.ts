@@ -437,7 +437,7 @@ export function validateRestaurantName(
   }
   const key = trimmed.toLocaleLowerCase();
   if (restaurants.some((restaurant) => restaurant.name.toLocaleLowerCase() === key)) {
-    return { ok: false, error: "这家餐厅已经在名单上了。" };
+    return { ok: false, error: "这家餐厅已经在列表上了。" };
   }
   return { ok: true, name: trimmed };
 }
@@ -635,6 +635,6 @@ export const PICK_ERRORS: Record<ElectionFailure | "needs-timezone", string> = {
   weekend: "周末不选餐厅。",
   empty: "先加一家餐厅，再抽今天吃什么。",
   exhausted: "这周每家餐厅都已经选过了。",
-  "today-empty": "今天的名单是空的，总名单没有变。",
+  "today-empty": "今天的列表是空的，总列表没有变。",
   "needs-timezone": "先确认时区，再抽今天吃什么。",
 };

@@ -75,7 +75,7 @@ function Header({ status }: { status: ConnectionStatus }) {
             eat what
           </h1>
           <p className="mt-2 max-w-md text-sm text-muted-foreground">
-            工作日午饭，一桌人一起吃。名单和抽中的结果，打开这个页面的人都看得到。
+            工作日午饭，一桌人一起吃。列表和抽中的结果，打开这个页面的人都看得到。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -118,7 +118,7 @@ function Decision({
         <p className="max-w-md text-muted-foreground">
           {status === "disconnected"
             ? "连接断了，过一会儿再试。"
-            : "正在连上共享的午饭名单。"}
+            : "正在连上共享的午饭列表。"}
         </p>
       </Ticket>
     );
@@ -146,7 +146,7 @@ function Decision({
           今天不选餐厅。
         </h2>
         <p className="max-w-md text-muted-foreground">
-          {state.weekdayName}不抽。名单还在。周一开新的一周，每家都能再抽。
+          {state.weekdayName}不抽。列表还在。周一开新的一周，每家都能再抽。
         </p>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <Button
@@ -181,7 +181,7 @@ function Decision({
         <Eyebrow>{state.dateLabel}</Eyebrow>
         <h2 className="font-heading text-4xl leading-tight font-semibold">还没有可以抽的。</h2>
         <p className="max-w-md text-muted-foreground">
-          先把这桌常去的地方加进来。名单上有名字之后，谁都可以抽今天的午饭。
+          先把这桌常去的地方加进来。列表上有名字之后，谁都可以抽今天的午饭。
         </p>
       </Ticket>
     );
@@ -195,7 +195,7 @@ function Decision({
           今天没有可抽的了。
         </h2>
         <p className="max-w-md text-muted-foreground">
-          这桌把今天名单上的都去掉了。总名单还在，新的一天会再抄一份。
+          这桌把今天列表上的都去掉了。总列表还在，新的一天会再抄一份。
         </p>
       </Ticket>
     );
@@ -209,7 +209,7 @@ function Decision({
           每家都轮过了。
         </h2>
         <p className="max-w-md text-muted-foreground">
-          这周前面的日子已经把每家餐厅都选过了。不会再编一家出来。周一重新开始，名单还留着。
+          这周前面的日子已经把每家餐厅都选过了。不会再编一家出来。周一重新开始，列表还留着。
         </p>
       </Ticket>
     );
@@ -234,7 +234,7 @@ function Decision({
             今天吃哪家？
           </h2>
           <p className="max-w-md text-muted-foreground">
-            从今天的名单里抽一家，在座的人看到的是同一个结果。
+            从今天的列表里抽一家，在座的人看到的是同一个结果。
           </p>
         </div>
       )}
@@ -345,11 +345,11 @@ function TodayList({
   return (
     <section className="rounded-3xl bg-card p-5 ring-1 ring-foreground/10 sm:p-6">
       <div className="mb-4">
-        <h2 className="font-heading text-2xl font-semibold">今天的名单</h2>
+        <h2 className="font-heading text-2xl font-semibold">今天的列表</h2>
         <p className="text-sm text-muted-foreground">
           {weekend
-            ? "周一会从总名单抄一份，去掉那一周已经选过的餐厅。"
-            : "新的一天开始时，从总名单抄一份，去掉这周已经选过的。这桌今天不去的，可以去掉。"}
+            ? "周一会从总列表抄一份，去掉那一周已经选过的餐厅。"
+            : "新的一天开始时，从总列表抄一份，去掉这周已经选过的。这桌今天不去的，可以去掉。"}
         </p>
       </div>
       {today.length === 0 ? (
@@ -410,9 +410,9 @@ function RestaurantList({
   return (
     <section className="rounded-3xl bg-card p-5 ring-1 ring-foreground/10 sm:p-6">
       <div className="mb-4">
-        <h2 className="font-heading text-2xl font-semibold">总名单</h2>
+        <h2 className="font-heading text-2xl font-semibold">总列表</h2>
         <p className="text-sm text-muted-foreground">
-          这桌可能去的所有餐厅。名字会留着，直到有人在这里去掉。今天新加的，不会进今天的名单。
+          这桌可能去的所有餐厅。名字会留着，直到有人在这里去掉。今天新加的，不会进今天的列表。
         </p>
       </div>
       {restaurants.length === 0 ? (
