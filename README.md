@@ -62,3 +62,15 @@ npm run deploy
 ```
 
 That builds the client and worker, then runs `wrangler deploy`. The worker name is `eat-what`.
+
+### eatwhatlunch.cn
+
+The address to open is `https://eatwhatlunch.cn`. Add the domain to the same Cloudflare account, then attach it after the first deploy:
+
+1. In the Cloudflare dashboard, add the site `eatwhatlunch.cn` and switch the domain to the nameservers Cloudflare shows.
+2. Run `npm run deploy`.
+3. Open the `eat-what` worker, go to Settings, Domains & Routes, and add `eatwhatlunch.cn` and `www.eatwhatlunch.cn` as custom domains.
+
+Cloudflare creates the DNS records and the certificate. The lunch list on a deployed worker is a new room. It does not copy the list from a temporary tunnel.
+
+A `.cn` name used from mainland China also needs an ICP filing (备案). That filing is done with a mainland provider. This app runs on Cloudflare Workers, which is not a mainland host, so the filing cannot be completed on this setup alone. Until that is solved, phones in China may not open `eatwhatlunch.cn` even after the steps above.
