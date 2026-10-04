@@ -174,13 +174,13 @@ describe("election", () => {
     const state = toPublicState(room, saturday);
     expect(state.phase).toBe("ready");
     expect(state.debugStandIn).toBe(true);
-    expect(state.weekdayName).toBe("Friday");
-    expect(state.dateLabel).toBe("Friday, October 2, 2026");
-    expect(state.realWeekdayName).toBe("Saturday");
+    expect(state.weekdayName).toBe("星期五");
+    expect(state.dateLabel).toBe("2026年10月2日 星期五");
+    expect(state.realWeekdayName).toBe("星期六");
     expect(state.weekId).toBe("2026-09-28");
 
     const sunday = new Date("2026-10-04T12:00:00.000Z");
-    expect(toPublicState(room, sunday).dateLabel).toBe("Friday, October 2, 2026");
+    expect(toPublicState(room, sunday).dateLabel).toBe("2026年10月2日 星期五");
 
     const chosen = chooseLunch(room, saturday, () => 0);
     expect(chosen.ok).toBe(true);
@@ -203,20 +203,20 @@ describe("election", () => {
     expect(onSaturday.debugDate).toEqual({ year: 2026, month: 10, day: 3 });
     expect(toPublicState(onSaturday, saturday)).toMatchObject({
       phase: "weekend",
-      weekdayName: "Saturday",
-      dateLabel: "Saturday, October 3, 2026",
+      weekdayName: "星期六",
+      dateLabel: "2026年10月3日 星期六",
       weekId: "2026-09-28",
       debugPinned: true,
     });
     expect(onSaturday.picks[4]?.name).toBe("Noodle Room");
 
     const onSunday = advanceDebugDay(onSaturday, saturday);
-    expect(toPublicState(onSunday, saturday).weekdayName).toBe("Sunday");
+    expect(toPublicState(onSunday, saturday).weekdayName).toBe("星期日");
 
     const onMonday = advanceDebugDay(onSunday, saturday);
     const monday = toPublicState(onMonday, saturday);
-    expect(monday.weekdayName).toBe("Monday");
-    expect(monday.dateLabel).toBe("Monday, October 5, 2026");
+    expect(monday.weekdayName).toBe("星期一");
+    expect(monday.dateLabel).toBe("2026年10月5日 星期一");
     expect(monday.weekId).toBe("2026-10-05");
     expect(monday.phase).toBe("ready");
     expect(monday.picks).toEqual([]);

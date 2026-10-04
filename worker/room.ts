@@ -51,11 +51,11 @@ export class LunchRoom extends DurableObject {
     try {
       parsed = parseMessage(decode(message));
     } catch {
-      this.sendError(ws, "pick", "That message could not be read.");
+      this.sendError(ws, "pick", "这条消息读不了。");
       return;
     }
     if (!parsed) {
-      this.sendError(ws, "pick", "That message could not be read.");
+      this.sendError(ws, "pick", "这条消息读不了。");
       return;
     }
 

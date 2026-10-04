@@ -2,10 +2,10 @@ import { useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { NAME_LIMIT, ROOM_TIME_ZONE, formatWeekOf, type PublicState } from "../shared/lunch";
+import { NAME_LIMIT, formatWeekOf, type PublicState } from "../shared/lunch";
 import { useRoom, type ConnectionStatus, type RoomNotice } from "./use-room";
 
-const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri"] as const;
+const DAY_LABELS = ["周一", "周二", "周三", "周四", "周五"] as const;
 const EMPTY_RESTAURANTS: PublicState["restaurants"] = [];
 
 export default function App() {
@@ -13,18 +13,18 @@ export default function App() {
 
   return (
     <div className="min-h-svh text-foreground">
-      <Header status={status} state={state} />
+      <Header status={status} />
       {status === "disconnected" && state ? (
         <p className="mx-auto mt-4 w-full max-w-5xl px-4 text-sm text-primary sm:px-6">
-          The table connection dropped. Reconnecting…
+          和这桌的连接断了，正在重新连接…
         </p>
       ) : null}
       {state && (state.debugStandIn || state.debugPinned) ? (
         <div className="mx-auto mt-4 flex w-full max-w-5xl flex-col gap-3 px-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
           <p className="rounded-2xl bg-accent px-4 py-3 text-sm text-accent-foreground">
             {state.debugStandIn
-              ? `Restaurant picking is open for a test. It's ${state.realDateLabel}, so ${state.weekdayName} is standing in.`
-              : `Debug clock is on ${state.dateLabel}. The real date is ${state.realDateLabel}.`}
+              ? `正在试抽餐厅。实际日期是${state.realDateLabel}，页面按${state.weekdayName}来算。`
+              : `试抽日期是${state.dateLabel}。实际日期是${state.realDateLabel}。`}
           </p>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -32,7 +32,7 @@ export default function App() {
               disabled={status !== "live"}
               onClick={() => send({ type: "advanceDebugDay" })}
             >
-              Next day
+              下一天
             </Button>
             <Button
               type="button"
@@ -40,7 +40,7 @@ export default function App() {
               disabled={status !== "live"}
               onClick={() => send({ type: "setDebugKitchen", open: false })}
             >
-              Close the test
+              结束试抽
             </Button>
           </div>
         </div>
@@ -60,28 +60,22 @@ export default function App() {
   );
 }
 
-function Header({
-  status,
-  state,
-}: {
-  status: ConnectionStatus;
-  state: PublicState | null;
-}) {
+function Header({ status }: { status: ConnectionStatus }) {
   const live = status === "live";
-  const label = live ? "Live" : status === "connecting" ? "Connecting" : "Reconnecting";
+  const label = live ? "已连接" : status === "connecting" ? "连接中" : "重新连接";
 
   return (
     <header className="border-b border-foreground/10 bg-card/85 backdrop-blur-sm">
       <div className="mx-auto flex w-full max-w-5xl flex-wrap items-end justify-between gap-4 px-4 py-5 sm:px-6">
         <div>
           <p className="text-xs font-medium tracking-[0.22em] text-primary uppercase">
-            Shared table
+            同一桌
           </p>
           <h1 className="font-heading text-4xl leading-none font-semibold tracking-tight italic sm:text-5xl">
             eat what
           </h1>
           <p className="mt-2 max-w-md text-sm text-muted-foreground">
-            Weekday lunch for one table. The list and the pick belong to everyone on this page.
+            工作日午饭，一桌人一起吃。名单和抽中的结果，打开这个页面的人都看得到。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -93,7 +87,7 @@ function Header({
             {label}
           </span>
           <span className="rounded-full bg-secondary px-3 py-1 text-sm">
-            {state?.timezone ?? ROOM_TIME_ZONE}
+            上海时间
           </span>
         </div>
       </div>
@@ -117,14 +111,14 @@ function Decision({
   if (!state) {
     return (
       <Ticket>
-        <Eyebrow>The table</Eyebrow>
+        <Eyebrow>入座</Eyebrow>
         <h2 className="font-heading text-4xl leading-tight font-semibold">
-          {status === "disconnected" ? "Can't reach the table." : "Pulling up a chair."}
+          {status === "disconnected" ? "连不上这桌。" : "正在入座。"}
         </h2>
         <p className="max-w-md text-muted-foreground">
           {status === "disconnected"
-            ? "The connection dropped. Trying again in a moment."
-            : "Connecting to the shared lunch list."}
+            ? "连接断了，过一会儿再试。"
+            : "正在连上共享的午饭名单。"}
         </p>
       </Ticket>
     );
@@ -133,13 +127,12 @@ function Decision({
   if (state.phase === "needs-timezone") {
     return (
       <Ticket>
-        <Eyebrow>One clock for the table</Eyebrow>
+        <Eyebrow>同一只钟</Eyebrow>
         <h2 className="font-heading text-4xl leading-tight font-semibold">
-          Lunch needs a timezone.
+          午饭按上海时间算。
         </h2>
         <p className="max-w-md text-muted-foreground">
-          Today and the Monday–Friday week come from the server clock in a timezone you choose
-          together. It is not each person's laptop date.
+          今天是周几，由服务器上的上海时间决定，不看每个人自己电脑上的日期。
         </p>
       </Ticket>
     );
@@ -150,11 +143,10 @@ function Decision({
       <Ticket>
         <Eyebrow>{state.dateLabel}</Eyebrow>
         <h2 className="font-heading text-4xl leading-tight font-semibold text-balance">
-          No restaurant is chosen today.
+          今天不选餐厅。
         </h2>
         <p className="max-w-md text-muted-foreground">
-          {state.weekdayName} doesn't get a restaurant. The list stays. Monday opens a new week,
-          and every place is eligible again.
+          {state.weekdayName}不抽。名单还在。周一开新的一周，每家都能再抽。
         </p>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <Button
@@ -164,7 +156,7 @@ function Decision({
             disabled={status !== "live"}
             onClick={() => send({ type: "setDebugKitchen", open: true })}
           >
-            Pick a restaurant
+            抽一家餐厅
           </Button>
           {state.debugPinned ? null : (
             <Button
@@ -175,7 +167,7 @@ function Decision({
               disabled={status !== "live"}
               onClick={() => send({ type: "advanceDebugDay" })}
             >
-              Next day
+              下一天
             </Button>
           )}
         </div>
@@ -187,10 +179,9 @@ function Decision({
     return (
       <Ticket>
         <Eyebrow>{state.dateLabel}</Eyebrow>
-        <h2 className="font-heading text-4xl leading-tight font-semibold">Nothing to draw yet.</h2>
+        <h2 className="font-heading text-4xl leading-tight font-semibold">还没有可以抽的。</h2>
         <p className="max-w-md text-muted-foreground">
-          Add the places this table actually goes. Once a name is on the list, anyone here can
-          pick today's restaurant.
+          先把这桌常去的地方加进来。名单上有名字之后，谁都可以抽今天的午饭。
         </p>
       </Ticket>
     );
@@ -201,11 +192,10 @@ function Decision({
       <Ticket>
         <Eyebrow>{state.dateLabel}</Eyebrow>
         <h2 className="font-heading text-4xl leading-tight font-semibold text-balance">
-          Nothing left for today.
+          今天没有可抽的了。
         </h2>
         <p className="max-w-md text-muted-foreground">
-          This group removed every place from today's list. The whole list is still there, and a
-          new day copies it again.
+          这桌把今天名单上的都去掉了。总名单还在，新的一天会再抄一份。
         </p>
       </Ticket>
     );
@@ -216,11 +206,10 @@ function Decision({
       <Ticket>
         <Eyebrow>{state.dateLabel}</Eyebrow>
         <h2 className="font-heading text-4xl leading-tight font-semibold text-balance">
-          Every place already had a turn.
+          每家都轮过了。
         </h2>
         <p className="max-w-md text-muted-foreground">
-          Each restaurant was chosen on an earlier weekday this week. Nothing new gets invented.
-          Picks reset when Monday starts, and the list stays.
+          这周前面的日子已经把每家餐厅都选过了。不会再编一家出来。周一重新开始，名单还留着。
         </p>
       </Ticket>
     );
@@ -233,26 +222,26 @@ function Decision({
       <Eyebrow>{state.dateLabel}</Eyebrow>
       {picked ? (
         <div key={state.todayPick?.restaurantId} className="ticket-in">
-          <p className="text-sm text-muted-foreground">Today's lunch</p>
+          <p className="text-sm text-muted-foreground">今天的午饭</p>
           <h2 className="font-heading text-5xl leading-[1.05] font-semibold text-balance sm:text-6xl">
             {state.todayPick?.name}
           </h2>
-          <p className="text-muted-foreground">Chosen for the table.</p>
+          <p className="text-muted-foreground">这桌今天就吃这家。</p>
         </div>
       ) : (
         <div>
           <h2 className="font-heading text-4xl leading-tight font-semibold sm:text-5xl">
-            Who's feeding the table?
+            今天吃哪家？
           </h2>
           <p className="max-w-md text-muted-foreground">
-            One draw from today's list, shared by everyone here.
+            从今天的名单里抽一家，在座的人看到的是同一个结果。
           </p>
         </div>
       )}
       {state.onlyOption ? (
         <p className="max-w-md rounded-2xl bg-accent px-4 py-3 text-sm text-accent-foreground">
-          Only one place is left that hasn't been chosen yet this week.
-          {picked ? " Picking again will choose it." : ""}
+          这周还没选过的，只剩这一家。
+          {picked ? "再抽一次还会抽到它。" : ""}
         </p>
       ) : null}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -263,10 +252,10 @@ function Decision({
           disabled={status !== "live"}
           onClick={() => send({ type: "pick" })}
         >
-          {picked ? "Pick another restaurant" : "Pick a restaurant"}
+          {picked ? "再抽一家" : "抽一家餐厅"}
         </Button>
         {status !== "live" ? (
-          <p className="text-sm text-muted-foreground">Reconnect to pick for the table.</p>
+          <p className="text-sm text-muted-foreground">重新连上之后才能抽。</p>
         ) : null}
       </div>
       {pickError ? (
@@ -301,9 +290,9 @@ function WeekStrip({ state }: { state: PublicState | null }) {
   return (
     <section className="rounded-3xl bg-card p-5 ring-1 ring-foreground/10">
       <div className="mb-4">
-        <h2 className="font-heading text-2xl font-semibold">This week</h2>
+        <h2 className="font-heading text-2xl font-semibold">本周</h2>
         <p className="text-sm text-muted-foreground">
-          {state?.weekId ? `Week of ${formatWeekOf(state.weekId)}` : "Set a timezone to place the week."}
+          {state?.weekId ? `从${formatWeekOf(state.weekId)}起` : "用上海时间排这一周。"}
         </p>
       </div>
       <ol className="flex flex-col gap-2">
@@ -317,12 +306,12 @@ function WeekStrip({ state }: { state: PublicState | null }) {
                 today ? "bg-secondary ring-1 ring-primary/40" : "bg-background/70"
               }`}
             >
-              <span className="w-12 shrink-0 text-sm font-medium">
+              <span className="w-14 shrink-0 text-sm font-medium">
                 {label}
-                {today ? <span className="mt-0.5 block text-[10px] tracking-wide text-primary uppercase">Today</span> : null}
+                {today ? <span className="mt-0.5 block text-[10px] tracking-wide text-primary">今天</span> : null}
               </span>
               <span className={`text-right text-sm ${name ? "font-heading text-base font-medium" : "text-muted-foreground"}`}>
-                {name ?? "Not yet"}
+                {name ?? "还没定"}
               </span>
             </li>
           );
@@ -330,11 +319,11 @@ function WeekStrip({ state }: { state: PublicState | null }) {
       </ol>
       {state?.debugStandIn ? (
         <p className="mt-4 text-sm text-muted-foreground">
-          Test pick: {state.weekdayName} stands in for {state.realWeekdayName}.
+          试抽：用{state.weekdayName}代替{state.realWeekdayName}。
         </p>
       ) : state?.isWeekend ? (
         <p className="mt-4 text-sm text-muted-foreground">
-          No restaurant on {state.weekdayName}. Monday through Friday are the lunch days.
+          {state.weekdayName}不选餐厅。周一到周五才抽午饭。
         </p>
       ) : null}
     </section>
@@ -356,16 +345,16 @@ function TodayList({
   return (
     <section className="rounded-3xl bg-card p-5 ring-1 ring-foreground/10 sm:p-6">
       <div className="mb-4">
-        <h2 className="font-heading text-2xl font-semibold">Today's list</h2>
+        <h2 className="font-heading text-2xl font-semibold">今天的名单</h2>
         <p className="text-sm text-muted-foreground">
           {weekend
-            ? "Monday copies the whole list and leaves out restaurants already chosen that week."
-            : "Copied from the whole list when the day starts, minus places already chosen this week. Remove a name if this group is not going there."}
+            ? "周一会从总名单抄一份，去掉那一周已经选过的餐厅。"
+            : "新的一天开始时，从总名单抄一份，去掉这周已经选过的。这桌今天不去的，可以去掉。"}
         </p>
       </div>
       {today.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          {weekend ? "No draw today." : "Nothing left to draw from today."}
+          {weekend ? "今天不抽。" : "今天没有可抽的了。"}
         </p>
       ) : (
         <ul className="divide-y divide-border">
@@ -378,7 +367,7 @@ function TodayList({
                 disabled={status !== "live"}
                 onClick={() => send({ type: "removeFromToday", id: restaurant.id })}
               >
-                Remove
+                去掉
               </Button>
             </li>
           ))}
@@ -421,14 +410,13 @@ function RestaurantList({
   return (
     <section className="rounded-3xl bg-card p-5 ring-1 ring-foreground/10 sm:p-6">
       <div className="mb-4">
-        <h2 className="font-heading text-2xl font-semibold">Whole list</h2>
+        <h2 className="font-heading text-2xl font-semibold">总名单</h2>
         <p className="text-sm text-muted-foreground">
-          Every restaurant this table might use. A name stays here until someone removes it.
-          Adding one today does not put it on today's list.
+          这桌可能去的所有餐厅。名字会留着，直到有人在这里去掉。今天新加的，不会进今天的名单。
         </p>
       </div>
       {restaurants.length === 0 ? (
-        <p className="mb-4 text-sm text-muted-foreground">No restaurants yet.</p>
+        <p className="mb-4 text-sm text-muted-foreground">还没有餐厅。</p>
       ) : (
         <ul className="mb-4 divide-y divide-border">
           {restaurants.map((restaurant) => (
@@ -440,7 +428,7 @@ function RestaurantList({
                 disabled={status !== "live"}
                 onClick={() => send({ type: "removeRestaurant", id: restaurant.id })}
               >
-                Remove
+                去掉
               </Button>
             </li>
           ))}
@@ -452,27 +440,27 @@ function RestaurantList({
           event.preventDefault();
           setLocalError(null);
           if (status !== "live") {
-            setLocalError("Reconnect to add a restaurant.");
+            setLocalError("重新连上之后才能添加。");
             return;
           }
           const trimmed = name.trim();
           setPendingName(trimmed);
           if (!send({ type: "addRestaurant", name })) {
             setPendingName(null);
-            setLocalError("Reconnect to add a restaurant.");
+            setLocalError("重新连上之后才能添加。");
             return;
           }
           setName("");
         }}
       >
         <label className="sr-only" htmlFor="restaurant-name">
-          Restaurant name
+          餐厅名字
         </label>
         <Input
           id="restaurant-name"
           value={name}
           maxLength={NAME_LIMIT}
-          placeholder="Add a restaurant"
+          placeholder="加一家餐厅"
           className="h-11 bg-background text-base"
           aria-invalid={Boolean(error)}
           onChange={(event) => {
@@ -482,7 +470,7 @@ function RestaurantList({
           }}
         />
         <Button type="submit" className="h-11 px-5" disabled={status !== "live"}>
-          Add
+          添加
         </Button>
       </form>
       {error ? (

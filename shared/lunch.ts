@@ -4,13 +4,13 @@ export const NAME_LIMIT = 80;
 export const ROOM_TIME_ZONE = "Asia/Shanghai";
 
 export const WEEKDAY_NAMES = [
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-  "Sunday",
+  "星期一",
+  "星期二",
+  "星期三",
+  "星期四",
+  "星期五",
+  "星期六",
+  "星期日",
 ] as const;
 
 export type WeekdayIndex = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -192,24 +192,11 @@ export function weekIdInTimeZone(now: Date, timeZone: string): string {
 }
 
 export function formatDateLabel(now: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  }).format(now);
+  return formatCalendarLabel(calendarInTimeZone(now, timeZone));
 }
 
 export function formatCalendarLabel(calendar: CalendarDate): string {
-  const utc = new Date(Date.UTC(calendar.year, calendar.month - 1, calendar.day, 12));
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "UTC",
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  }).format(utc);
+  return `${calendar.year}年${calendar.month}月${calendar.day}日 ${WEEKDAY_NAMES[calendar.weekday]}`;
 }
 
 export function calendarFromParts(year: number, month: number, day: number): CalendarDate {
@@ -279,12 +266,7 @@ export function advanceDebugDay(room: RoomData, now: Date): RoomData {
 export function formatWeekOf(weekId: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(weekId);
   if (!match) return weekId;
-  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
-  return new Intl.DateTimeFormat("en-US", {
-    month: "long",
-    day: "numeric",
-    timeZone: "UTC",
-  }).format(date);
+  return `${Number(match[2])}月${Number(match[3])}日`;
 }
 
 export function isWeekend(weekday: WeekdayIndex): boolean {
@@ -449,13 +431,13 @@ export function validateRestaurantName(
   restaurants: readonly Restaurant[],
 ): { ok: true; name: string } | { ok: false; error: string } {
   const trimmed = name.trim();
-  if (!trimmed) return { ok: false, error: "Enter a restaurant name." };
+  if (!trimmed) return { ok: false, error: "请填写餐厅名字。" };
   if ([...trimmed].length > NAME_LIMIT) {
-    return { ok: false, error: "Keep the name to 80 characters." };
+    return { ok: false, error: "名字请控制在 80 个字以内。" };
   }
   const key = trimmed.toLocaleLowerCase();
   if (restaurants.some((restaurant) => restaurant.name.toLocaleLowerCase() === key)) {
-    return { ok: false, error: "That restaurant is already on the list." };
+    return { ok: false, error: "这家餐厅已经在名单上了。" };
   }
   return { ok: true, name: trimmed };
 }
@@ -650,9 +632,9 @@ export function toPublicState(room: RoomData, now: Date): PublicState {
 }
 
 export const PICK_ERRORS: Record<ElectionFailure | "needs-timezone", string> = {
-  weekend: "It's the weekend, so no restaurant is chosen.",
-  empty: "Add a restaurant before picking lunch.",
-  exhausted: "Every restaurant was already chosen earlier this week.",
-  "today-empty": "Today's list is empty. The whole list is unchanged.",
-  "needs-timezone": "Confirm a timezone before picking lunch.",
+  weekend: "周末不选餐厅。",
+  empty: "先加一家餐厅，再抽今天吃什么。",
+  exhausted: "这周每家餐厅都已经选过了。",
+  "today-empty": "今天的名单是空的，总名单没有变。",
+  "needs-timezone": "先确认时区，再抽今天吃什么。",
 };
