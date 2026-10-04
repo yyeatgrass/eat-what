@@ -1,5 +1,8 @@
 export const NAME_LIMIT = 80;
 
+/** The only clock this table uses. */
+export const ROOM_TIME_ZONE = "Asia/Shanghai";
+
 export const WEEKDAY_NAMES = [
   "Monday",
   "Tuesday",
@@ -109,7 +112,7 @@ const ELECTION_DAYS: readonly ElectionDay[] = [0, 1, 2, 3, 4];
 
 export function emptyRoom(): RoomData {
   return {
-    timezone: null,
+    timezone: ROOM_TIME_ZONE,
     restaurants: [],
     weekId: null,
     picks: {},

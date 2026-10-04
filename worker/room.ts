@@ -5,8 +5,8 @@ import {
   advanceDebugDay,
   chooseLunch,
   emptyRoom,
-  isValidTimeZone,
   PICK_ERRORS,
+  ROOM_TIME_ZONE,
   removeRestaurant,
   toPublicState,
   withSyncedWeek,
@@ -86,11 +86,7 @@ export class LunchRoom extends DurableObject {
     }
 
     if (parsed.type === "setTimezone") {
-      if (!isValidTimeZone(parsed.timezone)) {
-        this.sendError(ws, "timezone", "Pick a valid timezone.");
-        return;
-      }
-      const next = withSyncedWeek({ ...room, timezone: parsed.timezone }, now).room;
+      const next = withSyncedWeek({ ...room, timezone: ROOM_TIME_ZONE }, now).room;
       await this.save(next);
       this.broadcast(toPublicState(next, now));
       return;
@@ -129,8 +125,10 @@ export class LunchRoom extends DurableObject {
 
   private async loadReady(now: Date): Promise<RoomData> {
     const stored = (await this.ctx.storage.get<RoomData>(STORAGE_KEY)) ?? emptyRoom();
-    const synced = withSyncedWeek(stored, now);
-    if (synced.reset) await this.save(synced.room);
+    const zoned =
+      stored.timezone === ROOM_TIME_ZONE ? stored : { ...stored, timezone: ROOM_TIME_ZONE };
+    const synced = withSyncedWeek(zoned, now);
+    if (synced.reset || zoned.timezone !== stored.timezone) await this.save(synced.room);
     return synced.room;
   }
 

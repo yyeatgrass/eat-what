@@ -1,59 +1,19 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { NAME_LIMIT, formatWeekOf, type PublicState } from "../shared/lunch";
+import { NAME_LIMIT, ROOM_TIME_ZONE, formatWeekOf, type PublicState } from "../shared/lunch";
 import { useRoom, type ConnectionStatus, type RoomNotice } from "./use-room";
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri"] as const;
 const EMPTY_RESTAURANTS: PublicState["restaurants"] = [];
 
-function browserTimeZone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  } catch {
-    return "UTC";
-  }
-}
-
-function timeZones(): string[] {
-  const supported = (
-    Intl as typeof Intl & { supportedValuesOf?: (key: string) => string[] }
-  ).supportedValuesOf?.("timeZone");
-  const zones = supported && supported.length > 0 ? [...supported] : [];
-  if (!zones.includes("UTC")) zones.unshift("UTC");
-  return zones.length > 0 ? zones : ["UTC"];
-}
-
 export default function App() {
   const { status, state, notice, send } = useRoom();
-  const timezone = state?.timezone ?? null;
-  const [changeOpen, setChangeOpen] = useState(false);
-  const [trackedTimezone, setTrackedTimezone] = useState<string | null | undefined>(undefined);
-
-  if (state && trackedTimezone !== timezone) {
-    setTrackedTimezone(timezone);
-    if (trackedTimezone !== undefined) setChangeOpen(false);
-  }
-
-  const timezoneRequired = Boolean(state && !timezone);
-  const zoneOpen = timezoneRequired || changeOpen;
 
   return (
     <div className="min-h-svh text-foreground">
-      <Header
-        status={status}
-        state={state}
-        onChangeTimezone={() => setChangeOpen(true)}
-      />
+      <Header status={status} state={state} />
       {status === "disconnected" && state ? (
         <p className="mx-auto mt-4 w-full max-w-5xl px-4 text-sm text-primary sm:px-6">
           The table connection dropped. Reconnecting…
@@ -95,15 +55,6 @@ export default function App() {
           send={send}
         />
       </main>
-      <TimezoneDialog
-        open={zoneOpen}
-        required={timezoneRequired}
-        current={timezone}
-        status={status}
-        notice={notice}
-        onOpenChange={setChangeOpen}
-        send={send}
-      />
     </div>
   );
 }
@@ -111,11 +62,9 @@ export default function App() {
 function Header({
   status,
   state,
-  onChangeTimezone,
 }: {
   status: ConnectionStatus;
   state: PublicState | null;
-  onChangeTimezone: () => void;
 }) {
   const live = status === "live";
   const label = live ? "Live" : status === "connecting" ? "Connecting" : "Reconnecting";
@@ -142,9 +91,9 @@ function Header({
             />
             {label}
           </span>
-          <Button type="button" variant="outline" onClick={onChangeTimezone} disabled={!state}>
-            {state?.timezone ?? "Set timezone"}
-          </Button>
+          <span className="rounded-full bg-secondary px-3 py-1 text-sm">
+            {state?.timezone ?? ROOM_TIME_ZONE}
+          </span>
         </div>
       </div>
     </header>
@@ -480,119 +429,5 @@ function RestaurantList({
         </p>
       ) : null}
     </section>
-  );
-}
-
-function TimezoneDialog({
-  open,
-  required,
-  current,
-  status,
-  notice,
-  onOpenChange,
-  send,
-}: {
-  open: boolean;
-  required: boolean;
-  current: string | null;
-  status: ConnectionStatus;
-  notice: RoomNotice | null;
-  onOpenChange: (open: boolean) => void;
-  send: ReturnType<typeof useRoom>["send"];
-}) {
-  const zones = useMemo(() => timeZones(), []);
-  const [query, setQuery] = useState("");
-  const [draft, setDraft] = useState(current ?? browserTimeZone());
-  const [localError, setLocalError] = useState<string | null>(null);
-  const [wasOpen, setWasOpen] = useState(open);
-  const serverError = notice?.scope === "timezone" ? notice.message : null;
-
-  if (open !== wasOpen) {
-    setWasOpen(open);
-    if (open) {
-      setDraft(current ?? browserTimeZone());
-      setQuery("");
-      setLocalError(null);
-    }
-  }
-
-  const filtered = zones.filter((zone) => zone.toLowerCase().includes(query.trim().toLowerCase()));
-  const options = filtered.includes(draft) || !draft ? filtered : [draft, ...filtered];
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next && required) return;
-        onOpenChange(next);
-      }}
-    >
-      <DialogContent
-        className="sm:max-w-md"
-        showCloseButton={!required}
-        onEscapeKeyDown={(event) => {
-          if (required) event.preventDefault();
-        }}
-        onInteractOutside={(event) => {
-          if (required) event.preventDefault();
-        }}
-      >
-        <DialogHeader>
-          <DialogTitle className="font-heading text-xl">Which clock should lunch follow?</DialogTitle>
-          <DialogDescription>
-            Today and the Monday–Friday week are decided in this timezone. The server keeps the
-            time. Everyone on the page shares it.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-col gap-3">
-          <label className="text-sm font-medium" htmlFor="timezone-search">
-            Search timezones
-          </label>
-          <Input
-            id="timezone-search"
-            value={query}
-            placeholder="America/New_York"
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          <label className="sr-only" htmlFor="timezone-list">
-            Timezone
-          </label>
-          <select
-            id="timezone-list"
-            size={8}
-            value={options.includes(draft) ? draft : ""}
-            className="w-full rounded-lg border border-input bg-background px-2 py-1 text-sm"
-            onChange={(event) => setDraft(event.target.value)}
-          >
-            {options.map((zone) => (
-              <option key={zone} value={zone}>
-                {zone}
-              </option>
-            ))}
-          </select>
-          {localError || serverError ? (
-            <p role="alert" className="text-sm text-destructive">
-              {localError ?? serverError}
-            </p>
-          ) : null}
-        </div>
-        <DialogFooter>
-          <Button
-            type="button"
-            disabled={!draft || status !== "live"}
-            onClick={() => {
-              setLocalError(null);
-              if (status !== "live") {
-                setLocalError("Reconnect to save the timezone.");
-                return;
-              }
-              send({ type: "setTimezone", timezone: draft });
-            }}
-          >
-            {current ? "Save timezone" : "Use this timezone"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
