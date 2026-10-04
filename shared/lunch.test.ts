@@ -6,6 +6,9 @@ import {
   chooseLunch,
   elect,
   emptyRoom,
+  prepareRoom,
+  removeFromToday,
+  removeRestaurant,
   toPublicState,
   type Restaurant,
   weekIdFor,
@@ -244,6 +247,92 @@ describe("election", () => {
     expect(
       elect({ restaurants: places, picks: {}, weekday: 6, reroll: false, rng: () => 0 }),
     ).toEqual({ ok: false, reason: "weekend" });
+  });
+
+  it("clones today's list from restaurants not already chosen, then keeps removals", () => {
+    const wednesday = new Date("2026-09-30T04:00:00.000Z");
+    const base = prepareRoom(
+      {
+        ...emptyRoom(),
+        timezone: "Asia/Shanghai",
+        weekId: "2026-09-28",
+        restaurants: places,
+        picks: { 0: { restaurantId: "a", name: "Noodle Room" } },
+      },
+      wednesday,
+    ).room;
+    expect(base.todayList?.ids).toEqual(["b", "c"]);
+
+    const trimmed = removeFromToday(base, "b");
+    expect(trimmed.restaurants).toEqual(places);
+    expect(trimmed.todayList?.ids).toEqual(["c"]);
+    expect(removeFromToday(trimmed, "b")).toBe(trimmed);
+
+    const again = prepareRoom(trimmed, wednesday).room;
+    expect(again.todayList?.ids).toEqual(["c"]);
+
+    const added = prepareRoom(
+      {
+        ...again,
+        restaurants: [...again.restaurants, { id: "d", name: "Basil Bowl" }],
+      },
+      wednesday,
+    ).room;
+    expect(added.todayList?.ids).toEqual(["c"]);
+
+    const thursday = prepareRoom(
+      {
+        ...added,
+        debugKitchen: true,
+        debugDate: { year: 2026, month: 10, day: 1 },
+      },
+      wednesday,
+    ).room;
+    expect(thursday.todayList?.weekday).toBe(3);
+    expect(thursday.todayList?.ids).toEqual(["b", "c", "d"]);
+  });
+
+  it("draws only from today's list and clears that pick if the place is removed", () => {
+    const wednesday = new Date("2026-09-30T04:00:00.000Z");
+    const room = prepareRoom(
+      {
+        ...emptyRoom(),
+        timezone: "Asia/Shanghai",
+        weekId: "2026-09-28",
+        restaurants: places,
+      },
+      wednesday,
+    ).room;
+    const trimmed = removeFromToday(removeFromToday(room, "a"), "b");
+    const chosen = chooseLunch(trimmed, wednesday, () => 0.99);
+    expect(chosen.ok).toBe(true);
+    if (!chosen.ok) return;
+    expect(chosen.room.picks[2]?.name).toBe("Fig & Rye");
+    expect(chosen.onlyOption).toBe(true);
+
+    const cleared = removeFromToday(chosen.room, "c");
+    expect(cleared.picks[2]).toBeUndefined();
+    expect(toPublicState(cleared, wednesday).phase).toBe("today-empty");
+    expect(chooseLunch(cleared, wednesday, () => 0)).toEqual({
+      ok: false,
+      reason: "today-empty",
+    });
+  });
+
+  it("removing a restaurant from the whole list also drops it from today", () => {
+    const wednesday = new Date("2026-09-30T04:00:00.000Z");
+    const room = prepareRoom(
+      {
+        ...emptyRoom(),
+        timezone: "Asia/Shanghai",
+        weekId: "2026-09-28",
+        restaurants: places,
+      },
+      wednesday,
+    ).room;
+    const next = removeRestaurant(room, "b");
+    expect(next.todayList?.ids).toEqual(["a", "c"]);
+    expect(next.restaurants.map((restaurant) => restaurant.id)).toEqual(["a", "c"]);
   });
 
   it("refuses an empty list", () => {

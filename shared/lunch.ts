@@ -28,11 +28,19 @@ export type DayPick = {
 
 export type Picks = Partial<Record<ElectionDay, DayPick>>;
 
+export type TodayList = {
+  weekId: string;
+  weekday: ElectionDay;
+  ids: string[];
+};
+
 export type RoomData = {
   timezone: string | null;
   restaurants: Restaurant[];
   weekId: string | null;
   picks: Picks;
+  /** Temporary draw list for one weekday. Null on a weekend. */
+  todayList: TodayList | null;
   /** Weekend-only stand-in so a manual test can run the weekday draw. */
   debugKitchen: boolean;
   /** Pinned calendar date. When set, the table uses this day instead of the clock. */
@@ -44,6 +52,7 @@ export type Phase =
   | "weekend"
   | "empty"
   | "exhausted"
+  | "today-empty"
   | "ready"
   | "picked";
 
@@ -62,6 +71,7 @@ export type PublicState = {
   dateLabel: string | null;
   isWeekend: boolean;
   picks: PublicPick[];
+  todayRestaurants: Restaurant[];
   todayPick: DayPick | null;
   onlyOption: boolean;
   exhausted: boolean;
@@ -79,6 +89,7 @@ export type ClientMessage =
   | { type: "setTimezone"; timezone: string }
   | { type: "addRestaurant"; name: string }
   | { type: "removeRestaurant"; id: string }
+  | { type: "removeFromToday"; id: string }
   | { type: "pick" }
   | { type: "heartbeat" }
   | { type: "setDebugKitchen"; open: boolean }
@@ -92,7 +103,7 @@ export type ServerMessage =
       message: string;
     };
 
-export type ElectionFailure = "weekend" | "empty" | "exhausted";
+export type ElectionFailure = "weekend" | "empty" | "exhausted" | "today-empty";
 
 export type ElectionResult =
   | { ok: false; reason: ElectionFailure }
@@ -116,6 +127,7 @@ export function emptyRoom(): RoomData {
     restaurants: [],
     weekId: null,
     picks: {},
+    todayList: null,
     debugKitchen: false,
     debugDate: null,
   };
@@ -254,7 +266,7 @@ export function advanceDebugDay(room: RoomData, now: Date): RoomData {
   if (!room.timezone || !isValidTimeZone(room.timezone)) return room;
   const clock = electionView(now, room.timezone, room.debugKitchen === true, room.debugDate);
   const next = addCalendarDays(clock.calendar, 1);
-  return withSyncedWeek(
+  return prepareRoom(
     {
       ...room,
       debugKitchen: true,
@@ -322,6 +334,85 @@ export function eligibleRestaurants(
     (restaurant) => restaurant.id !== todayPick.restaurantId,
   );
   return withoutToday.length > 0 ? withoutToday : eligible;
+}
+
+/** Restaurants still available before today, in whole-list order. */
+export function selectableRestaurants(
+  restaurants: readonly Restaurant[],
+  picks: Picks,
+  weekday: WeekdayIndex,
+): Restaurant[] {
+  return eligibleRestaurants(restaurants, picks, weekday, false);
+}
+
+function sameIds(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+/**
+ * On a new weekday, today's list is a copy of every restaurant not already
+ * chosen this week. Removals made today stay until the day changes.
+ */
+export function syncTodayList(room: RoomData, now: Date): { room: RoomData; changed: boolean } {
+  if (!room.timezone || !isValidTimeZone(room.timezone)) {
+    return { room, changed: false };
+  }
+  const clock = electionView(now, room.timezone, room.debugKitchen === true, room.debugDate);
+  if (isWeekend(clock.calendar.weekday)) {
+    if (room.todayList === null) return { room, changed: false };
+    return { room: { ...room, todayList: null }, changed: true };
+  }
+
+  const weekId = weekIdFor(clock.calendar);
+  const weekday = clock.calendar.weekday as ElectionDay;
+  const picks = room.weekId === weekId ? room.picks : {};
+  const fresh = selectableRestaurants(room.restaurants, picks, weekday).map(
+    (restaurant) => restaurant.id,
+  );
+  const current = room.todayList;
+  if (!current || current.weekId !== weekId || current.weekday !== weekday) {
+    return {
+      room: { ...room, todayList: { weekId, weekday, ids: fresh } },
+      changed: true,
+    };
+  }
+
+  const allowed = new Set(fresh);
+  const seen = new Set<string>();
+  const ids = current.ids.filter((id) => {
+    if (!allowed.has(id) || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+  if (sameIds(ids, current.ids)) return { room, changed: false };
+  return { room: { ...room, todayList: { ...current, ids } }, changed: true };
+}
+
+export function prepareRoom(room: RoomData, now: Date): { room: RoomData; changed: boolean } {
+  const synced = withSyncedWeek(room, now);
+  const listed = syncTodayList(synced.room, now);
+  return { room: listed.room, changed: synced.reset || listed.changed };
+}
+
+export function restaurantsForToday(room: RoomData, now: Date): Restaurant[] {
+  if (!room.timezone || !isValidTimeZone(room.timezone)) return [];
+  const clock = electionView(now, room.timezone, room.debugKitchen === true, room.debugDate);
+  if (isWeekend(clock.calendar.weekday)) return [];
+  const weekId = weekIdFor(clock.calendar);
+  const weekday = clock.calendar.weekday as ElectionDay;
+  const picks = room.weekId === weekId ? room.picks : {};
+  const selectable = selectableRestaurants(room.restaurants, picks, weekday);
+  const allowed = new Set(selectable.map((restaurant) => restaurant.id));
+  const stored = room.todayList;
+  const ids =
+    stored && stored.weekId === weekId && stored.weekday === weekday
+      ? stored.ids.filter((id) => allowed.has(id))
+      : selectable.map((restaurant) => restaurant.id);
+  const byId = new Map(room.restaurants.map((restaurant) => [restaurant.id, restaurant]));
+  return ids.flatMap((id) => {
+    const restaurant = byId.get(id);
+    return restaurant ? [restaurant] : [];
+  });
 }
 
 export function randomIndex(length: number, rng: () => number): number {
@@ -399,6 +490,25 @@ export function removeRestaurant(room: RoomData, id: string): RoomData {
     ...room,
     restaurants: room.restaurants.filter((restaurant) => restaurant.id !== id),
     picks: clearRestaurantFromPicks(room.picks, id),
+    todayList: room.todayList
+      ? { ...room.todayList, ids: room.todayList.ids.filter((item) => item !== id) }
+      : null,
+  };
+}
+
+/** Drops a place from today's draw only. A second remove of the same id does nothing. */
+export function removeFromToday(room: RoomData, id: string): RoomData {
+  if (!room.todayList?.ids.includes(id)) return room;
+  const weekday = room.todayList.weekday;
+  const picks = { ...room.picks };
+  if (picks[weekday]?.restaurantId === id) delete picks[weekday];
+  return {
+    ...room,
+    picks,
+    todayList: {
+      ...room.todayList,
+      ids: room.todayList.ids.filter((item) => item !== id),
+    },
   };
 }
 
@@ -412,7 +522,7 @@ export function chooseLunch(
   if (!room.timezone || !isValidTimeZone(room.timezone)) {
     return { ok: false, reason: "needs-timezone" };
   }
-  const synced = withSyncedWeek(room, now).room;
+  const synced = prepareRoom(room, now).room;
   const clock = electionView(
     now,
     synced.timezone as string,
@@ -420,8 +530,15 @@ export function chooseLunch(
     synced.debugDate,
   );
   const day = clock.calendar.weekday;
+  if (isWeekend(day)) return { ok: false, reason: "weekend" };
+  if (synced.restaurants.length === 0) return { ok: false, reason: "empty" };
+  const todayRestaurants = restaurantsForToday(synced, now);
+  if (todayRestaurants.length === 0) {
+    const selectable = selectableRestaurants(synced.restaurants, synced.picks, day);
+    return { ok: false, reason: selectable.length === 0 ? "exhausted" : "today-empty" };
+  }
   const result = elect({
-    restaurants: synced.restaurants,
+    restaurants: todayRestaurants,
     picks: synced.picks,
     weekday: day,
     reroll: day <= 4 && Boolean(synced.picks[day as ElectionDay]),
@@ -462,6 +579,7 @@ export function toPublicState(room: RoomData, now: Date): PublicState {
       dateLabel: null,
       isWeekend: false,
       picks: [],
+      todayRestaurants: [],
       todayPick: null,
       onlyOption: false,
       exhausted: false,
@@ -479,18 +597,25 @@ export function toPublicState(room: RoomData, now: Date): PublicState {
   const weekId = weekIdFor(calendar);
   const picks = room.weekId === weekId ? room.picks : {};
   const weekend = isWeekend(calendar.weekday);
-  const todayPick =
+  const todayRestaurants = restaurantsForToday(room, now);
+  const todayPickRaw =
     !weekend && calendar.weekday <= 4 ? (picks[calendar.weekday as ElectionDay] ?? null) : null;
-  const open = weekend
+  const todayPick =
+    todayPickRaw && todayRestaurants.some((restaurant) => restaurant.id === todayPickRaw.restaurantId)
+      ? todayPickRaw
+      : null;
+  const selectable = weekend
     ? []
-    : eligibleRestaurants(restaurants, picks, calendar.weekday, false);
-  const exhausted = !weekend && restaurants.length > 0 && open.length === 0;
-  const onlyOption = !weekend && open.length === 1;
+    : selectableRestaurants(restaurants, picks, calendar.weekday);
+  const exhausted = !weekend && restaurants.length > 0 && selectable.length === 0;
+  const todayEmpty = !weekend && !exhausted && restaurants.length > 0 && todayRestaurants.length === 0;
+  const onlyOption = !weekend && todayRestaurants.length === 1;
 
   let phase: Phase;
   if (weekend) phase = "weekend";
   else if (restaurants.length === 0) phase = "empty";
   else if (exhausted) phase = "exhausted";
+  else if (todayEmpty) phase = "today-empty";
   else if (todayPick) phase = "picked";
   else phase = "ready";
 
@@ -516,6 +641,7 @@ export function toPublicState(room: RoomData, now: Date): PublicState {
         ? [{ weekday: day, restaurantId: pick.restaurantId, name: pick.name }]
         : [];
     }),
+    todayRestaurants,
     todayPick,
     onlyOption,
     exhausted,
@@ -527,5 +653,6 @@ export const PICK_ERRORS: Record<ElectionFailure | "needs-timezone", string> = {
   weekend: "It's the weekend, so no restaurant is chosen.",
   empty: "Add a restaurant before picking lunch.",
   exhausted: "Every restaurant was already chosen earlier this week.",
+  "today-empty": "Today's list is empty. The whole list is unchanged.",
   "needs-timezone": "Confirm a timezone before picking lunch.",
 };

@@ -48,6 +48,7 @@ export default function App() {
       <main className="mx-auto grid w-full max-w-5xl gap-4 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(17rem,0.85fr)]">
         <Decision status={status} state={state} notice={notice} send={send} />
         <WeekStrip state={state} />
+        <TodayList status={status} state={state} send={send} />
         <RestaurantList
           status={status}
           state={state}
@@ -195,6 +196,21 @@ function Decision({
     );
   }
 
+  if (state.phase === "today-empty") {
+    return (
+      <Ticket>
+        <Eyebrow>{state.dateLabel}</Eyebrow>
+        <h2 className="font-heading text-4xl leading-tight font-semibold text-balance">
+          Nothing left for today.
+        </h2>
+        <p className="max-w-md text-muted-foreground">
+          This group removed every place from today's list. The whole list is still there, and a
+          new day copies it again.
+        </p>
+      </Ticket>
+    );
+  }
+
   if (state.phase === "exhausted") {
     return (
       <Ticket>
@@ -229,8 +245,7 @@ function Decision({
             Who's feeding the table?
           </h2>
           <p className="max-w-md text-muted-foreground">
-            One draw, shared by everyone here. Places already chosen earlier this week stay out of
-            the hat.
+            One draw from today's list, shared by everyone here.
           </p>
         </div>
       )}
@@ -326,6 +341,53 @@ function WeekStrip({ state }: { state: PublicState | null }) {
   );
 }
 
+function TodayList({
+  status,
+  state,
+  send,
+}: {
+  status: ConnectionStatus;
+  state: PublicState | null;
+  send: ReturnType<typeof useRoom>["send"];
+}) {
+  const today = state?.todayRestaurants ?? EMPTY_RESTAURANTS;
+  const weekend = state?.isWeekend ?? false;
+
+  return (
+    <section className="rounded-3xl bg-card p-5 ring-1 ring-foreground/10 sm:p-6">
+      <div className="mb-4">
+        <h2 className="font-heading text-2xl font-semibold">Today's list</h2>
+        <p className="text-sm text-muted-foreground">
+          {weekend
+            ? "Monday copies the whole list and leaves out restaurants already chosen that week."
+            : "Copied from the whole list when the day starts, minus places already chosen this week. Remove a name if this group is not going there."}
+        </p>
+      </div>
+      {today.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          {weekend ? "No draw today." : "Nothing left to draw from today."}
+        </p>
+      ) : (
+        <ul className="divide-y divide-border">
+          {today.map((restaurant) => (
+            <li key={restaurant.id} className="flex items-center justify-between gap-3 py-2">
+              <span className="font-heading text-lg font-medium">{restaurant.name}</span>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={status !== "live"}
+                onClick={() => send({ type: "removeFromToday", id: restaurant.id })}
+              >
+                Remove
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function RestaurantList({
   status,
   state,
@@ -357,12 +419,12 @@ function RestaurantList({
   }
 
   return (
-    <section className="rounded-3xl bg-card p-5 ring-1 ring-foreground/10 lg:col-span-2 sm:p-6">
+    <section className="rounded-3xl bg-card p-5 ring-1 ring-foreground/10 sm:p-6">
       <div className="mb-4">
-        <h2 className="font-heading text-2xl font-semibold">Restaurants</h2>
+        <h2 className="font-heading text-2xl font-semibold">Whole list</h2>
         <p className="text-sm text-muted-foreground">
-          Names stay on the list from week to week. Removing a place also clears it if it was
-          chosen this week.
+          Every restaurant this table might use. A name stays here until someone removes it.
+          Adding one today does not put it on today's list.
         </p>
       </div>
       {restaurants.length === 0 ? (

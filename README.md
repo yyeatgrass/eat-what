@@ -2,7 +2,7 @@
 
 A shared weekday lunch picker for a small group. One page, one restaurant list, one live election. No accounts.
 
-Anyone with the URL sees the same list and the same pick. The clock is Asia/Shanghai, plus the server time. That decides which day it is. Monday through Friday, anyone can draw a restaurant that has not already been chosen on an earlier weekday this week. Pick again replaces today and skips the current result when another place is still eligible. Saturday and Sunday show a weekend state and leave the list alone. When the week changes, that week's picks reset. Restaurants stay.
+Anyone with the URL sees the same list and the same pick. The clock is Asia/Shanghai, plus the server time. That decides which day it is. Monday through Friday, today's list starts as every restaurant not already chosen earlier that week. Anyone can remove a place from today's list without deleting it from the whole list. The draw uses only today's list. Pick again replaces today and skips the current result when another place is still on today's list. Saturday and Sunday show a weekend state and leave the list alone. When the week changes, that week's picks reset. Restaurants stay.
 
 ## Run it locally
 

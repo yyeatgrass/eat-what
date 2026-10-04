@@ -7,9 +7,10 @@ import {
   emptyRoom,
   PICK_ERRORS,
   ROOM_TIME_ZONE,
+  prepareRoom,
+  removeFromToday,
   removeRestaurant,
   toPublicState,
-  withSyncedWeek,
   type ClientMessage,
   type PublicState,
   type RoomData,
@@ -58,6 +59,8 @@ export class LunchRoom extends DurableObject {
       return;
     }
 
+    // One Durable Object handles these messages one at a time. Each one
+    // reads the room saved by the previous message, then broadcasts that result.
     const now = new Date();
     const room = await this.loadReady(now);
 
@@ -67,7 +70,7 @@ export class LunchRoom extends DurableObject {
     }
 
     if (parsed.type === "setDebugKitchen") {
-      const next = withSyncedWeek(
+      const next = prepareRoom(
         parsed.open
           ? { ...room, debugKitchen: true, debugDate: null }
           : { ...room, debugKitchen: false, debugDate: null },
@@ -86,7 +89,7 @@ export class LunchRoom extends DurableObject {
     }
 
     if (parsed.type === "setTimezone") {
-      const next = withSyncedWeek({ ...room, timezone: ROOM_TIME_ZONE }, now).room;
+      const next = prepareRoom({ ...room, timezone: ROOM_TIME_ZONE }, now).room;
       await this.save(next);
       this.broadcast(toPublicState(next, now));
       return;
@@ -98,14 +101,24 @@ export class LunchRoom extends DurableObject {
         this.sendError(ws, "restaurant", added.error);
         return;
       }
-      await this.save(added.room);
-      this.broadcast(toPublicState(added.room, now));
+      const next = prepareRoom(added.room, now).room;
+      await this.save(next);
+      this.broadcast(toPublicState(next, now));
       return;
     }
 
     if (parsed.type === "removeRestaurant") {
-      const next = removeRestaurant(room, parsed.id);
+      const next = prepareRoom(removeRestaurant(room, parsed.id), now).room;
       await this.save(next);
+      this.broadcast(toPublicState(next, now));
+      return;
+    }
+
+    if (parsed.type === "removeFromToday") {
+      const ready = prepareRoom(room, now).room;
+      const next = removeFromToday(ready, parsed.id);
+      if (next !== ready) await this.save(next);
+      else if (ready !== room) await this.save(ready);
       this.broadcast(toPublicState(next, now));
       return;
     }
@@ -127,9 +140,9 @@ export class LunchRoom extends DurableObject {
     const stored = (await this.ctx.storage.get<RoomData>(STORAGE_KEY)) ?? emptyRoom();
     const zoned =
       stored.timezone === ROOM_TIME_ZONE ? stored : { ...stored, timezone: ROOM_TIME_ZONE };
-    const synced = withSyncedWeek(zoned, now);
-    if (synced.reset || zoned.timezone !== stored.timezone) await this.save(synced.room);
-    return synced.room;
+    const prepared = prepareRoom(zoned, now);
+    if (prepared.changed || zoned.timezone !== stored.timezone) await this.save(prepared.room);
+    return prepared.room;
   }
 
   private async save(room: RoomData): Promise<void> {
@@ -184,7 +197,7 @@ function parseMessage(raw: string): ClientMessage | null {
     const name = readString(value, "name");
     return name === null ? null : { type, name };
   }
-  if (type === "removeRestaurant") {
+  if (type === "removeRestaurant" || type === "removeFromToday") {
     const id = readString(value, "id");
     return id === null ? null : { type, id };
   }
