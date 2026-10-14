@@ -94,6 +94,7 @@ export type ClientMessage =
   | { type: "removeRestaurant"; id: string }
   | { type: "removeFromToday"; id: string }
   | { type: "pick" }
+  | { type: "choose"; id: string }
   | { type: "confirm" }
   | { type: "heartbeat" }
   | { type: "setDebugKitchen"; open: boolean }
@@ -109,7 +110,12 @@ export type ServerMessage =
 
 export type ElectionFailure = "weekend" | "empty" | "exhausted" | "today-empty";
 
-export type ChooseRefusal = ElectionFailure | "needs-timezone" | "confirmed" | "no-pick";
+export type ChooseRefusal =
+  | ElectionFailure
+  | "needs-timezone"
+  | "confirmed"
+  | "no-pick"
+  | "not-today";
 
 export type ElectionResult =
   | { ok: false; reason: ElectionFailure }
@@ -460,8 +466,17 @@ export function addRestaurant(
     room: {
       ...room,
       restaurants: [...room.restaurants, { id, name: validated.name }],
+      todayList: appendToOpenTodayList(room, id),
     },
   };
+}
+
+/** A new place joins today's draw while that day is still open. A confirmed day stays locked. */
+function appendToOpenTodayList(room: RoomData, id: string): TodayList | null {
+  const todayList = room.todayList;
+  if (!todayList || todayList.ids.includes(id)) return todayList;
+  if (room.picks[todayList.weekday]?.confirmed === true) return todayList;
+  return { ...todayList, ids: [...todayList.ids, id] };
 }
 
 export function clearRestaurantFromPicks(picks: Picks, restaurantId: string): Picks {
@@ -510,13 +525,12 @@ export function removeFromToday(room: RoomData, id: string): RoomData {
   };
 }
 
-export function chooseLunch(
+function openDraw(
   room: RoomData,
   now: Date,
-  rng: () => number,
 ):
   | { ok: false; reason: ChooseRefusal }
-  | { ok: true; room: RoomData; onlyOption: boolean } {
+  | { ok: true; room: RoomData; day: ElectionDay; todayRestaurants: Restaurant[] } {
   if (!room.timezone || !isValidTimeZone(room.timezone)) {
     return { ok: false, reason: "needs-timezone" };
   }
@@ -538,29 +552,58 @@ export function chooseLunch(
     const selectable = selectableRestaurants(synced.restaurants, synced.picks, day);
     return { ok: false, reason: selectable.length === 0 ? "exhausted" : "today-empty" };
   }
+  return { ok: true, room: synced, day: day as ElectionDay, todayRestaurants };
+}
+
+function storePick(room: RoomData, day: ElectionDay, restaurant: Restaurant): RoomData {
+  return {
+    ...room,
+    picks: {
+      ...room.picks,
+      [day]: {
+        restaurantId: restaurant.id,
+        name: restaurant.name,
+        confirmed: false,
+      },
+    },
+  };
+}
+
+export function chooseLunch(
+  room: RoomData,
+  now: Date,
+  rng: () => number,
+):
+  | { ok: false; reason: ChooseRefusal }
+  | { ok: true; room: RoomData; onlyOption: boolean } {
+  const opened = openDraw(room, now);
+  if (!opened.ok) return opened;
   const result = elect({
-    restaurants: todayRestaurants,
-    picks: synced.picks,
-    weekday: day,
-    reroll: day <= 4 && Boolean(synced.picks[day as ElectionDay]),
+    restaurants: opened.todayRestaurants,
+    picks: opened.room.picks,
+    weekday: opened.day,
+    reroll: Boolean(opened.room.picks[opened.day]),
     rng,
   });
   if (!result.ok) return result;
   return {
     ok: true,
     onlyOption: result.onlyOption,
-    room: {
-      ...synced,
-      picks: {
-        ...synced.picks,
-        [day as ElectionDay]: {
-          restaurantId: result.restaurant.id,
-          name: result.restaurant.name,
-          confirmed: false,
-        },
-      },
-    },
+    room: storePick(opened.room, opened.day, result.restaurant),
   };
+}
+
+/** Sets today's result to one place still on today's list. A locked day stays locked. */
+export function chooseRestaurant(
+  room: RoomData,
+  now: Date,
+  restaurantId: string,
+): { ok: false; reason: ChooseRefusal } | { ok: true; room: RoomData } {
+  const opened = openDraw(room, now);
+  if (!opened.ok) return opened;
+  const restaurant = opened.todayRestaurants.find((item) => item.id === restaurantId);
+  if (!restaurant) return { ok: false, reason: "not-today" };
+  return { ok: true, room: storePick(opened.room, opened.day, restaurant) };
 }
 
 export function confirmToday(
@@ -699,4 +742,5 @@ export const PICK_ERRORS: Record<ChooseRefusal, string> = {
   "needs-timezone": "先确认时区，再抽今天吃什么。",
   confirmed: "今天已经确定了，不能再改。",
   "no-pick": "先抽出今天的午饭，再确定。",
+  "not-today": "这家不在今天的列表里。",
 };

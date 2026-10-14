@@ -5,6 +5,7 @@ import {
   advanceDebugDay,
   choiceLocked,
   chooseLunch,
+  chooseRestaurant,
   confirmToday,
   emptyRoom,
   PICK_ERRORS,
@@ -138,6 +139,17 @@ export class LunchRoom extends DurableObject {
       return;
     }
 
+    if (parsed.type === "choose") {
+      const outcome = chooseRestaurant(room, now, parsed.id);
+      if (!outcome.ok) {
+        this.sendError(ws, "pick", PICK_ERRORS[outcome.reason]);
+        return;
+      }
+      await this.save(outcome.room);
+      this.broadcast(toPublicState(outcome.room, now));
+      return;
+    }
+
     if (parsed.type === "confirm") {
       const outcome = confirmToday(room, now);
       if (!outcome.ok) {
@@ -225,7 +237,7 @@ function parseMessage(raw: string): ClientMessage | null {
     const name = readString(value, "name");
     return name === null ? null : { type, name };
   }
-  if (type === "removeRestaurant" || type === "removeFromToday") {
+  if (type === "removeRestaurant" || type === "removeFromToday" || type === "choose") {
     const id = readString(value, "id");
     return id === null ? null : { type, id };
   }

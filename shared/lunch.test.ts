@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   calendarInTimeZone,
   advanceDebugDay,
+  addRestaurant,
   chooseLunch,
+  chooseRestaurant,
   confirmToday,
   elect,
   emptyRoom,
@@ -272,14 +274,12 @@ describe("election", () => {
     const again = prepareRoom(trimmed, wednesday).room;
     expect(again.todayList?.ids).toEqual(["c"]);
 
-    const added = prepareRoom(
-      {
-        ...again,
-        restaurants: [...again.restaurants, { id: "d", name: "Basil Bowl" }],
-      },
-      wednesday,
-    ).room;
-    expect(added.todayList?.ids).toEqual(["c"]);
+    const addedResult = addRestaurant(again, "Basil Bowl", "d");
+    expect(addedResult.ok).toBe(true);
+    if (!addedResult.ok) return;
+    const added = prepareRoom(addedResult.room, wednesday).room;
+    expect(added.todayList?.ids).toEqual(["c", "d"]);
+    expect(added.restaurants.map((restaurant) => restaurant.id)).toEqual(["a", "b", "c", "d"]);
 
     const thursday = prepareRoom(
       {
@@ -291,6 +291,98 @@ describe("election", () => {
     ).room;
     expect(thursday.todayList?.weekday).toBe(3);
     expect(thursday.todayList?.ids).toEqual(["b", "c", "d"]);
+  });
+
+  it("draws a restaurant that was just added to an open day", () => {
+    const wednesday = new Date("2026-09-30T04:00:00.000Z");
+    const room = prepareRoom(
+      {
+        ...emptyRoom(),
+        timezone: "Asia/Shanghai",
+        weekId: "2026-09-28",
+        restaurants: places,
+      },
+      wednesday,
+    ).room;
+    const added = addRestaurant(room, "Basil Bowl", "d");
+    expect(added.ok).toBe(true);
+    if (!added.ok) return;
+    const ready = prepareRoom(added.room, wednesday).room;
+    expect(ready.todayList?.ids).toEqual(["a", "b", "c", "d"]);
+    const chosen = chooseLunch(ready, wednesday, () => 0.99);
+    expect(chosen.ok).toBe(true);
+    if (!chosen.ok) return;
+    expect(chosen.room.picks[2]?.name).toBe("Basil Bowl");
+  });
+
+  it("leaves a confirmed day locked when a restaurant is added", () => {
+    const wednesday = new Date("2026-09-30T04:00:00.000Z");
+    const room = prepareRoom(
+      {
+        ...emptyRoom(),
+        timezone: "Asia/Shanghai",
+        weekId: "2026-09-28",
+        restaurants: places,
+      },
+      wednesday,
+    ).room;
+    const chosen = chooseLunch(room, wednesday, () => 0);
+    expect(chosen.ok).toBe(true);
+    if (!chosen.ok) return;
+    const confirmed = confirmToday(chosen.room, wednesday);
+    expect(confirmed.ok).toBe(true);
+    if (!confirmed.ok) return;
+    const added = addRestaurant(confirmed.room, "Basil Bowl", "d");
+    expect(added.ok).toBe(true);
+    if (!added.ok) return;
+    const ready = prepareRoom(added.room, wednesday).room;
+    expect(ready.restaurants.map((restaurant) => restaurant.name)).toContain("Basil Bowl");
+    expect(ready.todayList?.ids).toEqual(["a", "b", "c"]);
+    expect(chooseLunch(ready, wednesday, () => 0.99)).toEqual({
+      ok: false,
+      reason: "confirmed",
+    });
+
+    const thursday = prepareRoom(
+      {
+        ...ready,
+        debugKitchen: true,
+        debugDate: { year: 2026, month: 10, day: 1 },
+      },
+      wednesday,
+    ).room;
+    expect(thursday.todayList?.ids).toEqual(["b", "c", "d"]);
+  });
+
+  it("keeps a weekend addition on the whole list until Monday copies it", () => {
+    const saturday = new Date("2026-10-03T12:00:00.000Z");
+    const room = prepareRoom(
+      {
+        ...emptyRoom(),
+        timezone: "Asia/Shanghai",
+        weekId: "2026-09-28",
+        restaurants: places,
+      },
+      saturday,
+    ).room;
+    expect(room.todayList).toBeNull();
+    const added = addRestaurant(room, "Basil Bowl", "d");
+    expect(added.ok).toBe(true);
+    if (!added.ok) return;
+    const ready = prepareRoom(added.room, saturday).room;
+    expect(ready.todayList).toBeNull();
+    expect(ready.restaurants.map((restaurant) => restaurant.id)).toEqual(["a", "b", "c", "d"]);
+
+    const monday = prepareRoom(
+      {
+        ...ready,
+        debugKitchen: true,
+        debugDate: { year: 2026, month: 10, day: 5 },
+      },
+      saturday,
+    ).room;
+    expect(monday.todayList?.weekday).toBe(0);
+    expect(monday.todayList?.ids).toEqual(["a", "b", "c", "d"]);
   });
 
   it("draws only from today's list and clears that pick if the place is removed", () => {
@@ -410,6 +502,62 @@ describe("election", () => {
       wednesday,
     ).room;
     expect(confirmToday(room, wednesday)).toEqual({ ok: false, reason: "no-pick" });
+  });
+
+  it("lets the table choose a place still on today's list", () => {
+    const wednesday = new Date("2026-09-30T04:00:00.000Z");
+    const room = prepareRoom(
+      {
+        ...emptyRoom(),
+        timezone: "Asia/Shanghai",
+        weekId: "2026-09-28",
+        restaurants: places,
+        picks: { 0: { restaurantId: "a", name: "Noodle Room" } },
+      },
+      wednesday,
+    ).room;
+    const removed = removeFromToday(room, "b");
+    expect(chooseRestaurant(removed, wednesday, "a")).toEqual({
+      ok: false,
+      reason: "not-today",
+    });
+    expect(chooseRestaurant(removed, wednesday, "b")).toEqual({
+      ok: false,
+      reason: "not-today",
+    });
+    const chosen = chooseRestaurant(removed, wednesday, "c");
+    expect(chosen.ok).toBe(true);
+    if (!chosen.ok) return;
+    expect(chosen.room.picks[2]).toMatchObject({
+      restaurantId: "c",
+      name: "Fig & Rye",
+      confirmed: false,
+    });
+
+    expect(chooseRestaurant(chosen.room, wednesday, "c").ok).toBe(true);
+    const added = addRestaurant(chosen.room, "Basil Bowl", "d");
+    expect(added.ok).toBe(true);
+    if (!added.ok) return;
+    const manual = chooseRestaurant(added.room, wednesday, "d");
+    expect(manual.ok).toBe(true);
+    if (!manual.ok) return;
+    expect(manual.room.picks[2]?.name).toBe("Basil Bowl");
+    expect(manual.room.picks[2]?.confirmed).toBe(false);
+
+    const confirmed = confirmToday(manual.room, wednesday);
+    expect(confirmed.ok).toBe(true);
+    if (!confirmed.ok) return;
+    expect(chooseRestaurant(confirmed.room, wednesday, "c")).toEqual({
+      ok: false,
+      reason: "confirmed",
+    });
+    expect(confirmed.room.picks[2]?.name).toBe("Basil Bowl");
+
+    const cleared = removeFromToday(removeFromToday(room, "b"), "c");
+    expect(chooseRestaurant(cleared, wednesday, "c")).toEqual({
+      ok: false,
+      reason: "today-empty",
+    });
   });
 
   it("refuses an empty list", () => {

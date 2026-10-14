@@ -1,6 +1,13 @@
 import { useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { NAME_LIMIT, formatWeekOf, type PublicState } from "../shared/lunch";
 import { useRoom, type ConnectionStatus, type RoomNotice } from "./use-room";
@@ -197,6 +204,7 @@ function Decision({
         <p className="max-w-md text-muted-foreground">
           这桌把今天列表上的都去掉了。总列表还在，新的一天会再抄一份。
         </p>
+        <ManualPick status={status} restaurants={state.todayRestaurants} send={send} />
       </Ticket>
     );
   }
@@ -211,6 +219,7 @@ function Decision({
         <p className="max-w-md text-muted-foreground">
           这周前面的日子已经把每家餐厅都选过了。不会再编一家出来。周一重新开始，列表还留着。
         </p>
+        <ManualPick status={status} restaurants={state.todayRestaurants} send={send} />
       </Ticket>
     );
   }
@@ -258,6 +267,7 @@ function Decision({
         >
           {picked ? "再抽一家" : "抽一家餐厅"}
         </Button>
+        <ManualPick status={status} restaurants={state.todayRestaurants} send={send} />
         {picked ? (
           <Button
             type="button"
@@ -281,6 +291,61 @@ function Decision({
         </p>
       ) : null}
     </Ticket>
+  );
+}
+
+function ManualPick({
+  status,
+  restaurants,
+  send,
+}: {
+  status: ConnectionStatus;
+  restaurants: PublicState["restaurants"];
+  send: ReturnType<typeof useRoom>["send"];
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <Button
+        type="button"
+        size="lg"
+        variant="outline"
+        className="h-12 px-6 text-base"
+        disabled={status !== "live"}
+        onClick={() => setOpen(true)}
+      >
+        自己选
+      </Button>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>自己选</DialogTitle>
+          <DialogDescription>
+            {restaurants.length === 0
+              ? "今天的列表是空的，没有可以选的。"
+              : "从今天还在的餐厅里选一家。这桌看到的是同一个结果。"}
+          </DialogDescription>
+        </DialogHeader>
+        {restaurants.length > 0 ? (
+          <ul className="flex flex-col gap-1">
+            {restaurants.map((restaurant) => (
+              <li key={restaurant.id}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-11 w-full justify-start font-heading text-lg"
+                  onClick={() => {
+                    send({ type: "choose", id: restaurant.id });
+                    setOpen(false);
+                  }}
+                >
+                  {restaurant.name}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -441,7 +506,7 @@ function RestaurantList({
       <div className="mb-4">
         <h2 className="font-heading text-2xl font-semibold">总列表</h2>
         <p className="text-sm text-muted-foreground">
-          这桌可能去的所有餐厅。名字会留着，直到有人在这里去掉。今天新加的，不会进今天的列表。
+          这桌可能去的所有餐厅。名字会留着，直到有人在这里去掉。今天还没确定时，新加的马上可以抽。
         </p>
       </div>
       {restaurants.length === 0 ? (
