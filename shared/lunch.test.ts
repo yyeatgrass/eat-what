@@ -9,6 +9,7 @@ import {
   chooseRestaurant,
   confirmPastDay,
   confirmToday,
+  unconfirmDay,
   elect,
   emptyRoom,
   prepareRoom,
@@ -490,6 +491,91 @@ describe("election", () => {
     if (!next.ok) return;
     expect(next.room.picks[3]?.confirmed).toBe(false);
     expect(next.room.picks[3]?.name).not.toBe("Noodle Room");
+  });
+
+  it("undoes a confirmed day and keeps the choice", () => {
+    const wednesday = new Date("2026-09-30T04:00:00.000Z");
+    const room = prepareRoom(
+      {
+        ...emptyRoom(),
+        timezone: "Asia/Shanghai",
+        weekId: "2026-09-28",
+        restaurants: places,
+      },
+      wednesday,
+    ).room;
+    const chosen = chooseLunch(room, wednesday, () => 0);
+    expect(chosen.ok).toBe(true);
+    if (!chosen.ok) return;
+    const confirmed = confirmToday(chosen.room, wednesday);
+    expect(confirmed.ok).toBe(true);
+    if (!confirmed.ok) return;
+
+    expect(unconfirmDay(confirmed.room, wednesday, 4)).toEqual({
+      ok: false,
+      reason: "not-undoable",
+    });
+    expect(unconfirmDay(room, wednesday, 2)).toEqual({ ok: false, reason: "no-pick" });
+    expect(unconfirmDay(chosen.room, wednesday, 2)).toEqual({
+      ok: false,
+      reason: "not-confirmed",
+    });
+
+    const undone = unconfirmDay(confirmed.room, wednesday, 2);
+    expect(undone.ok).toBe(true);
+    if (!undone.ok) return;
+    expect(undone.room.picks[2]).toMatchObject({
+      restaurantId: "a",
+      name: "Noodle Room",
+      confirmed: false,
+    });
+    expect(chooseLunch(undone.room, wednesday, () => 0.99).ok).toBe(true);
+    expect(removeRestaurant(undone.room, "a").restaurants.map((item) => item.id)).toEqual([
+      "b",
+      "c",
+    ]);
+
+    const thursday = new Date("2026-10-01T04:00:00.000Z");
+    const past = confirmPastDay(
+      prepareRoom(
+        {
+          ...undone.room,
+          picks: {
+            ...undone.room.picks,
+            0: { restaurantId: "", name: "空", empty: true, confirmed: false },
+          },
+        },
+        thursday,
+      ).room,
+      thursday,
+      0,
+    );
+    expect(past.ok).toBe(true);
+    if (!past.ok) return;
+    const reopened = unconfirmDay(past.room, thursday, 0);
+    expect(reopened.ok).toBe(true);
+    if (!reopened.ok) return;
+    expect(reopened.room.picks[0]).toMatchObject({ empty: true, name: "空", confirmed: false });
+    const changed = choosePastDay(reopened.room, thursday, 0, "b");
+    expect(changed.ok).toBe(true);
+    if (!changed.ok) return;
+    expect(changed.room.picks[0]?.name).toBe("Corner Tacos");
+
+    const saturday = new Date("2026-10-03T04:00:00.000Z");
+    const lockedFriday = prepareRoom(
+      {
+        ...changed.room,
+        picks: {
+          ...changed.room.picks,
+          4: { restaurantId: "c", name: "Fig & Rye", confirmed: true },
+        },
+      },
+      saturday,
+    ).room;
+    const weekendUndo = unconfirmDay(lockedFriday, saturday, 4);
+    expect(weekendUndo.ok).toBe(true);
+    if (!weekendUndo.ok) return;
+    expect(weekendUndo.room.picks[4]).toMatchObject({ name: "Fig & Rye", confirmed: false });
   });
 
   it("refuses to confirm a day that has no pick", () => {

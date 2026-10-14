@@ -9,6 +9,7 @@ import {
   chooseRestaurant,
   confirmPastDay,
   confirmToday,
+  unconfirmDay,
   emptyRoom,
   PICK_ERRORS,
   ROOM_TIME_ZONE,
@@ -174,6 +175,17 @@ export class LunchRoom extends DurableObject {
       return;
     }
 
+    if (parsed.type === "unconfirm") {
+      const outcome = unconfirmDay(room, now, parsed.weekday);
+      if (!outcome.ok) {
+        this.sendError(ws, "pick", PICK_ERRORS[outcome.reason]);
+        return;
+      }
+      await this.save(outcome.room);
+      this.broadcast(toPublicState(outcome.room, now));
+      return;
+    }
+
     if (parsed.type === "confirm") {
       const outcome = confirmToday(room, now);
       if (!outcome.ok) {
@@ -274,7 +286,7 @@ function parseMessage(raw: string): ClientMessage | null {
     const id = readString(value, "id");
     return id === null ? null : { type, id };
   }
-  if (type === "confirmPast") {
+  if (type === "confirmPast" || type === "unconfirm") {
     const weekday = readWeekday(value);
     return weekday === null ? null : { type, weekday };
   }

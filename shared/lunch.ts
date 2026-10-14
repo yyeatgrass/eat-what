@@ -101,6 +101,7 @@ export type ClientMessage =
   | { type: "confirm" }
   | { type: "choosePast"; weekday: ElectionDay; id: string | null }
   | { type: "confirmPast"; weekday: ElectionDay }
+  | { type: "unconfirm"; weekday: ElectionDay }
   | { type: "heartbeat" }
   | { type: "setDebugKitchen"; open: boolean }
   | { type: "advanceDebugDay" };
@@ -123,7 +124,9 @@ export type ChooseRefusal =
   | "not-today"
   | "not-past"
   | "taken"
-  | "no-past-pick";
+  | "no-past-pick"
+  | "not-confirmed"
+  | "not-undoable";
 
 export type ElectionResult =
   | { ok: false; reason: ElectionFailure }
@@ -734,6 +737,42 @@ export function confirmPastDay(
   };
 }
 
+/** Clears 已定 on today or an earlier weekday this week. The choice itself stays. */
+export function unconfirmDay(
+  room: RoomData,
+  now: Date,
+  weekday: number,
+): { ok: false; reason: ChooseRefusal } | { ok: true; room: RoomData } {
+  if (!room.timezone || !isValidTimeZone(room.timezone)) {
+    return { ok: false, reason: "needs-timezone" };
+  }
+  if (!ELECTION_DAYS.includes(weekday as ElectionDay)) {
+    return { ok: false, reason: "not-undoable" };
+  }
+  const synced = prepareRoom(room, now).room;
+  const clock = electionView(
+    now,
+    synced.timezone as string,
+    synced.debugKitchen === true,
+    synced.debugDate,
+  );
+  if (clock.calendar.weekday < weekday) return { ok: false, reason: "not-undoable" };
+  const day = weekday as ElectionDay;
+  const pick = synced.picks[day];
+  if (!pick) return { ok: false, reason: "no-pick" };
+  if (pick.confirmed !== true) return { ok: false, reason: "not-confirmed" };
+  return {
+    ok: true,
+    room: {
+      ...synced,
+      picks: {
+        ...synced.picks,
+        [day]: { ...pick, confirmed: false },
+      },
+    },
+  };
+}
+
 export function confirmToday(
   room: RoomData,
   now: Date,
@@ -875,4 +914,6 @@ export const PICK_ERRORS: Record<ChooseRefusal, string> = {
   "not-past": "只能改这周已经过去、还没确定的日子。",
   taken: "这家这周另一天已经选了。",
   "no-past-pick": "先为这一天选出餐厅或空，再确定。",
+  "not-confirmed": "这一天还没确定。",
+  "not-undoable": "只能撤销这周已经确定的日子。",
 };

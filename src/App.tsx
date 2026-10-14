@@ -13,6 +13,13 @@ import { NAME_LIMIT, formatWeekOf, type PublicState } from "../shared/lunch";
 import { useRoom, type ConnectionStatus, type RoomNotice } from "./use-room";
 
 const DAY_LABELS = ["周一", "周二", "周三", "周四", "周五"] as const;
+
+function asElectionDay(weekday: number | null | undefined): 0 | 1 | 2 | 3 | 4 | null {
+  if (weekday === 0 || weekday === 1 || weekday === 2 || weekday === 3 || weekday === 4) {
+    return weekday;
+  }
+  return null;
+}
 const EMPTY_RESTAURANTS: PublicState["restaurants"] = [];
 
 export default function App() {
@@ -237,7 +244,7 @@ function Decision({
             {state.todayPick?.name}
           </h2>
           <p className="text-muted-foreground">
-            {confirmed ? "已经确定，今天不能再改。" : "这桌今天就吃这家。确定之后就不能再改。"}
+            {confirmed ? "已经确定。点错了可以撤销。" : "这桌今天就吃这家。确定之后就不能再改。"}
           </p>
         </div>
       ) : (
@@ -256,7 +263,22 @@ function Decision({
           {picked ? "再抽一次还会抽到它。" : ""}
         </p>
       ) : null}
-      {confirmed ? null : (
+      {confirmed ? (
+        <Button
+          type="button"
+          size="lg"
+          variant="outline"
+          className="h-12 px-6 text-base"
+          disabled={status !== "live" || asElectionDay(state.weekday) === null}
+          onClick={() => {
+            const weekday = asElectionDay(state.weekday);
+            if (weekday === null) return;
+            send({ type: "unconfirm", weekday });
+          }}
+        >
+          撤销确定
+        </Button>
+      ) : (
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <Button
           type="button"
@@ -405,20 +427,24 @@ function WeekStrip({
           const today = state?.weekday === index;
           const editable =
             state?.weekday != null && index < state.weekday && pick?.confirmed !== true;
+          const undoable =
+            state?.weekday != null && index <= state.weekday && pick?.confirmed === true;
+          const clickable = editable || undoable;
           return (
             <li key={label}>
               <button
                 type="button"
-                disabled={!editable || status !== "live"}
+                disabled={!clickable || status !== "live"}
                 onClick={() => setOpenDay(day)}
                 className={`flex w-full items-baseline justify-between gap-3 rounded-2xl border-0 px-3 py-2 text-left ${
                   today ? "bg-secondary ring-1 ring-primary/40" : "bg-background/70"
-                } ${editable ? "cursor-pointer hover:ring-1 hover:ring-primary/30" : "cursor-default"} disabled:opacity-100`}
+                } ${clickable ? "cursor-pointer hover:ring-1 hover:ring-primary/30" : "cursor-default"} disabled:opacity-100`}
               >
                 <span className="w-14 shrink-0 text-sm font-medium">
                   {label}
                   {today ? <span className="mt-0.5 block text-[10px] tracking-wide text-primary">今天</span> : null}
                   {editable ? <span className="mt-0.5 block text-[10px] tracking-wide text-primary">可改</span> : null}
+                  {undoable ? <span className="mt-0.5 block text-[10px] tracking-wide text-primary">可撤</span> : null}
                 </span>
                 <span className={`text-right text-sm ${name ? "font-heading text-base font-medium" : "text-muted-foreground"}`}>
                   {name ?? "还没定"}
@@ -434,11 +460,35 @@ function WeekStrip({
       <Dialog open={openDay !== null} onOpenChange={(open) => { if (!open) setOpenDay(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{openDay === null ? "改这一天" : `改${DAY_LABELS[openDay]}`}</DialogTitle>
+            <DialogTitle>
+              {openDay === null
+                ? "改这一天"
+                : openPick?.confirmed
+                  ? `撤销${DAY_LABELS[openDay]}的确定`
+                  : `改${DAY_LABELS[openDay]}`}
+            </DialogTitle>
             <DialogDescription>
-              这一天还没确定。选一家，或选空，然后再确定。已经确定的日子不能从这里改。
+              {openPick?.confirmed
+                ? `${openPick.empty ? "空" : openPick.name}已经确定。撤销之后可以重新选。`
+                : "这一天还没确定。选一家，或选空，然后再确定。"}
             </DialogDescription>
           </DialogHeader>
+          {openPick?.confirmed ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11"
+              disabled={status !== "live" || openDay === null}
+              onClick={() => {
+                if (openDay === null) return;
+                send({ type: "unconfirm", weekday: openDay });
+                setOpenDay(null);
+              }}
+            >
+              撤销确定
+            </Button>
+          ) : (
+          <>
           <ul className="flex max-h-72 flex-col gap-1 overflow-y-auto">
             <li>
               <Button
@@ -483,6 +533,8 @@ function WeekStrip({
           >
             确定这一天
           </Button>
+          </>
+          )}
           {pastError ? (
             <p role="alert" className="text-sm text-destructive">
               {pastError}
