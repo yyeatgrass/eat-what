@@ -5,7 +5,9 @@ import {
   advanceDebugDay,
   choiceLocked,
   chooseLunch,
+  choosePastDay,
   chooseRestaurant,
+  confirmPastDay,
   confirmToday,
   emptyRoom,
   PICK_ERRORS,
@@ -150,6 +152,28 @@ export class LunchRoom extends DurableObject {
       return;
     }
 
+    if (parsed.type === "choosePast") {
+      const outcome = choosePastDay(room, now, parsed.weekday, parsed.id);
+      if (!outcome.ok) {
+        this.sendError(ws, "pick", PICK_ERRORS[outcome.reason]);
+        return;
+      }
+      await this.save(outcome.room);
+      this.broadcast(toPublicState(outcome.room, now));
+      return;
+    }
+
+    if (parsed.type === "confirmPast") {
+      const outcome = confirmPastDay(room, now, parsed.weekday);
+      if (!outcome.ok) {
+        this.sendError(ws, "pick", PICK_ERRORS[outcome.reason]);
+        return;
+      }
+      await this.save(outcome.room);
+      this.broadcast(toPublicState(outcome.room, now));
+      return;
+    }
+
     if (parsed.type === "confirm") {
       const outcome = confirmToday(room, now);
       if (!outcome.ok) {
@@ -222,6 +246,15 @@ function readString(value: object, key: string): string | null {
   return typeof field === "string" ? field : null;
 }
 
+function readWeekday(value: object): 0 | 1 | 2 | 3 | 4 | null {
+  if (!("weekday" in value)) return null;
+  const weekday = (value as Record<string, unknown>).weekday;
+  if (weekday === 0 || weekday === 1 || weekday === 2 || weekday === 3 || weekday === 4) {
+    return weekday;
+  }
+  return null;
+}
+
 function parseMessage(raw: string): ClientMessage | null {
   const value: unknown = JSON.parse(raw);
   if (!value || typeof value !== "object") return null;
@@ -240,6 +273,17 @@ function parseMessage(raw: string): ClientMessage | null {
   if (type === "removeRestaurant" || type === "removeFromToday" || type === "choose") {
     const id = readString(value, "id");
     return id === null ? null : { type, id };
+  }
+  if (type === "confirmPast") {
+    const weekday = readWeekday(value);
+    return weekday === null ? null : { type, weekday };
+  }
+  if (type === "choosePast") {
+    const weekday = readWeekday(value);
+    if (weekday === null || !("id" in value)) return null;
+    const id = (value as Record<string, unknown>).id;
+    if (id !== null && typeof id !== "string") return null;
+    return { type, weekday, id };
   }
   if (type === "setDebugKitchen") {
     if (!("open" in value)) return null;

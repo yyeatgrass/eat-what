@@ -5,7 +5,9 @@ import {
   advanceDebugDay,
   addRestaurant,
   chooseLunch,
+  choosePastDay,
   chooseRestaurant,
+  confirmPastDay,
   confirmToday,
   elect,
   emptyRoom,
@@ -557,6 +559,94 @@ describe("election", () => {
     expect(chooseRestaurant(cleared, wednesday, "c")).toEqual({
       ok: false,
       reason: "today-empty",
+    });
+  });
+
+  it("reopens an unconfirmed past day and can leave it empty", () => {
+    const thursday = new Date("2026-10-01T04:00:00.000Z");
+    const room = prepareRoom(
+      {
+        ...emptyRoom(),
+        timezone: "Asia/Shanghai",
+        weekId: "2026-09-28",
+        restaurants: places,
+        picks: {
+          0: { restaurantId: "a", name: "Noodle Room", confirmed: true },
+          2: { restaurantId: "c", name: "Fig & Rye", confirmed: false },
+        },
+      },
+      thursday,
+    ).room;
+
+    expect(choosePastDay(room, thursday, 0, "b")).toEqual({ ok: false, reason: "confirmed" });
+    expect(choosePastDay(room, thursday, 3, null)).toEqual({ ok: false, reason: "not-past" });
+    expect(choosePastDay(room, thursday, 4, null)).toEqual({ ok: false, reason: "not-past" });
+    expect(choosePastDay(room, thursday, 2, "a")).toEqual({ ok: false, reason: "taken" });
+
+    const emptied = choosePastDay(room, thursday, 2, null);
+    expect(emptied.ok).toBe(true);
+    if (!emptied.ok) return;
+    expect(emptied.room.picks[2]).toMatchObject({ empty: true, name: "空", confirmed: false });
+    expect(emptied.room.todayList?.ids).toContain("c");
+    expect(toPublicState(emptied.room, thursday).picks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ weekday: 2, name: "空", empty: true, confirmed: false }),
+      ]),
+    );
+
+    expect(confirmPastDay(emptied.room, thursday, 1)).toEqual({
+      ok: false,
+      reason: "no-past-pick",
+    });
+    const confirmedEmpty = confirmPastDay(emptied.room, thursday, 2);
+    expect(confirmedEmpty.ok).toBe(true);
+    if (!confirmedEmpty.ok) return;
+    expect(confirmedEmpty.room.picks[2]?.confirmed).toBe(true);
+    expect(choosePastDay(confirmedEmpty.room, thursday, 2, "b")).toEqual({
+      ok: false,
+      reason: "confirmed",
+    });
+
+    const tuesday = choosePastDay(confirmedEmpty.room, thursday, 1, "b");
+    expect(tuesday.ok).toBe(true);
+    if (!tuesday.ok) return;
+    expect(tuesday.room.picks[1]?.name).toBe("Corner Tacos");
+    expect(tuesday.room.todayList?.ids).not.toContain("b");
+    const locked = confirmPastDay(tuesday.room, thursday, 1);
+    expect(locked.ok).toBe(true);
+    if (!locked.ok) return;
+    expect(locked.room.picks[1]?.confirmed).toBe(true);
+  });
+
+  it("lets the weekend reopen any unconfirmed weekday, including an empty one", () => {
+    const saturday = new Date("2026-10-03T04:00:00.000Z");
+    const room = prepareRoom(
+      {
+        ...emptyRoom(),
+        timezone: "Asia/Shanghai",
+        weekId: "2026-09-28",
+        restaurants: places,
+        picks: {
+          0: { restaurantId: "a", name: "Noodle Room", confirmed: true },
+          4: { restaurantId: "b", name: "Corner Tacos", confirmed: false },
+        },
+      },
+      saturday,
+    ).room;
+
+    expect(toPublicState(room, saturday).isWeekend).toBe(true);
+    expect(choosePastDay(room, saturday, 0, null)).toEqual({ ok: false, reason: "confirmed" });
+    const emptied = choosePastDay(room, saturday, 4, null);
+    expect(emptied.ok).toBe(true);
+    if (!emptied.ok) return;
+    expect(emptied.room.picks[4]).toMatchObject({ empty: true, name: "空", confirmed: false });
+    const locked = confirmPastDay(emptied.room, saturday, 4);
+    expect(locked.ok).toBe(true);
+    if (!locked.ok) return;
+    expect(locked.room.picks[4]?.confirmed).toBe(true);
+    expect(choosePastDay(locked.room, saturday, 4, "c")).toEqual({
+      ok: false,
+      reason: "confirmed",
     });
   });
 

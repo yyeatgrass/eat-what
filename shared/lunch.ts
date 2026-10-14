@@ -24,8 +24,10 @@ export type Restaurant = {
 export type DayPick = {
   restaurantId: string;
   name: string;
-  /** Set when the table locks today's result. */
+  /** Set when the table locks this day's result. */
   confirmed?: boolean;
+  /** A confirmed or pending choice of no restaurant. */
+  empty?: boolean;
 };
 
 export type Picks = Partial<Record<ElectionDay, DayPick>>;
@@ -63,6 +65,7 @@ export type PublicPick = {
   restaurantId: string;
   name: string;
   confirmed: boolean;
+  empty: boolean;
 };
 
 export type PublicState = {
@@ -96,6 +99,8 @@ export type ClientMessage =
   | { type: "pick" }
   | { type: "choose"; id: string }
   | { type: "confirm" }
+  | { type: "choosePast"; weekday: ElectionDay; id: string | null }
+  | { type: "confirmPast"; weekday: ElectionDay }
   | { type: "heartbeat" }
   | { type: "setDebugKitchen"; open: boolean }
   | { type: "advanceDebugDay" };
@@ -115,7 +120,10 @@ export type ChooseRefusal =
   | "needs-timezone"
   | "confirmed"
   | "no-pick"
-  | "not-today";
+  | "not-today"
+  | "not-past"
+  | "taken"
+  | "no-past-pick";
 
 export type ElectionResult =
   | { ok: false; reason: ElectionFailure }
@@ -315,7 +323,7 @@ export function eligibleRestaurants(
   const earlierThrough = Math.min(weekday, 5);
   for (let day = 0; day < earlierThrough; day += 1) {
     const pick = picks[day as ElectionDay];
-    if (pick) chosenEarlier.add(pick.restaurantId);
+    if (pick && !pick.empty && pick.restaurantId) chosenEarlier.add(pick.restaurantId);
   }
 
   let eligible = restaurants.filter((restaurant) => !chosenEarlier.has(restaurant.id));
@@ -490,7 +498,12 @@ export function clearRestaurantFromPicks(picks: Picks, restaurantId: string): Pi
 export function choiceLocked(room: RoomData, restaurantId: string): boolean {
   return ELECTION_DAYS.some((day) => {
     const pick = room.picks[day];
-    return pick?.restaurantId === restaurantId && pick.confirmed === true;
+    return (
+    pick?.restaurantId === restaurantId &&
+    pick.confirmed === true &&
+    !pick.empty &&
+    restaurantId !== ""
+  );
   });
 }
 
@@ -604,6 +617,121 @@ export function chooseRestaurant(
   const restaurant = opened.todayRestaurants.find((item) => item.id === restaurantId);
   if (!restaurant) return { ok: false, reason: "not-today" };
   return { ok: true, room: storePick(opened.room, opened.day, restaurant) };
+}
+
+function requirePastOpenDay(
+  room: RoomData,
+  now: Date,
+  weekday: number,
+):
+  | { ok: false; reason: ChooseRefusal }
+  | { ok: true; room: RoomData; day: ElectionDay; today: WeekdayIndex } {
+  if (!room.timezone || !isValidTimeZone(room.timezone)) {
+    return { ok: false, reason: "needs-timezone" };
+  }
+  if (!ELECTION_DAYS.includes(weekday as ElectionDay)) {
+    return { ok: false, reason: "not-past" };
+  }
+  const synced = prepareRoom(room, now).room;
+  const clock = electionView(
+    now,
+    synced.timezone as string,
+    synced.debugKitchen === true,
+    synced.debugDate,
+  );
+  const today = clock.calendar.weekday;
+  if (today <= weekday) return { ok: false, reason: "not-past" };
+  const day = weekday as ElectionDay;
+  if (synced.picks[day]?.confirmed === true) return { ok: false, reason: "confirmed" };
+  return { ok: true, room: synced, day, today };
+}
+
+function restaurantTakenOnOtherDay(picks: Picks, day: ElectionDay, restaurantId: string): boolean {
+  return ELECTION_DAYS.some((other) => {
+    if (other === day) return false;
+    const pick = picks[other];
+    return Boolean(pick && !pick.empty && pick.restaurantId === restaurantId);
+  });
+}
+
+/** Reopens a past unconfirmed day. `null` chooses 空. A confirmed day stays locked. */
+export function choosePastDay(
+  room: RoomData,
+  now: Date,
+  weekday: number,
+  restaurantId: string | null,
+): { ok: false; reason: ChooseRefusal } | { ok: true; room: RoomData } {
+  const opened = requirePastOpenDay(room, now, weekday);
+  if (!opened.ok) return opened;
+  const previous = opened.room.picks[opened.day];
+  let pick: DayPick;
+  if (restaurantId === null) {
+    pick = { restaurantId: "", name: "空", empty: true, confirmed: false };
+  } else {
+    const restaurant = opened.room.restaurants.find((item) => item.id === restaurantId);
+    if (!restaurant) return { ok: false, reason: "not-today" };
+    if (restaurantTakenOnOtherDay(opened.room.picks, opened.day, restaurant.id)) {
+      return { ok: false, reason: "taken" };
+    }
+    pick = {
+      restaurantId: restaurant.id,
+      name: restaurant.name,
+      empty: false,
+      confirmed: false,
+    };
+  }
+
+  const picks: Picks = { ...opened.room.picks, [opened.day]: pick };
+  let todayList = opened.room.todayList;
+  const todayIsOpen =
+    todayList &&
+    todayList.weekday === opened.today &&
+    picks[opened.today as ElectionDay]?.confirmed !== true;
+  if (todayList && todayList.weekday === opened.today) {
+    let ids = todayList.ids;
+    if (!pick.empty && pick.restaurantId) {
+      ids = ids.filter((id) => id !== pick.restaurantId);
+      const todayPick = picks[opened.today as ElectionDay];
+      if (todayPick && !todayPick.confirmed && todayPick.restaurantId === pick.restaurantId) {
+        delete picks[opened.today as ElectionDay];
+      }
+    }
+    if (
+      todayIsOpen &&
+      previous &&
+      !previous.empty &&
+      previous.restaurantId &&
+      previous.restaurantId !== pick.restaurantId &&
+      !restaurantTakenOnOtherDay(picks, opened.day, previous.restaurantId) &&
+      !ids.includes(previous.restaurantId)
+    ) {
+      ids = [...ids, previous.restaurantId];
+    }
+    todayList = { ...todayList, ids };
+  }
+
+  return { ok: true, room: { ...opened.room, picks, todayList } };
+}
+
+export function confirmPastDay(
+  room: RoomData,
+  now: Date,
+  weekday: number,
+): { ok: false; reason: ChooseRefusal } | { ok: true; room: RoomData } {
+  const opened = requirePastOpenDay(room, now, weekday);
+  if (!opened.ok) return opened;
+  const pick = opened.room.picks[opened.day];
+  if (!pick) return { ok: false, reason: "no-past-pick" };
+  return {
+    ok: true,
+    room: {
+      ...opened.room,
+      picks: {
+        ...opened.room.picks,
+        [opened.day]: { ...pick, confirmed: true },
+      },
+    },
+  };
 }
 
 export function confirmToday(
@@ -722,6 +850,7 @@ export function toPublicState(room: RoomData, now: Date): PublicState {
               restaurantId: pick.restaurantId,
               name: pick.name,
               confirmed: pick.confirmed === true,
+              empty: pick.empty === true,
             },
           ]
         : [];
@@ -740,7 +869,10 @@ export const PICK_ERRORS: Record<ChooseRefusal, string> = {
   exhausted: "这周每家餐厅都已经选过了。",
   "today-empty": "今天的列表是空的，总列表没有变。",
   "needs-timezone": "先确认时区，再抽今天吃什么。",
-  confirmed: "今天已经确定了，不能再改。",
+  confirmed: "这一天已经确定了，不能再改。",
   "no-pick": "先抽出今天的午饭，再确定。",
   "not-today": "这家不在今天的列表里。",
+  "not-past": "只能改这周已经过去、还没确定的日子。",
+  taken: "这家这周另一天已经选了。",
+  "no-past-pick": "先为这一天选出餐厅或空，再确定。",
 };

@@ -54,7 +54,7 @@ export default function App() {
       ) : null}
       <main className="mx-auto grid w-full max-w-5xl gap-4 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(17rem,0.85fr)]">
         <Decision status={status} state={state} notice={notice} send={send} />
-        <WeekStrip state={state} />
+        <WeekStrip status={status} state={state} notice={notice} send={send} />
         <TodayList status={status} state={state} send={send} />
         <RestaurantList
           status={status}
@@ -367,8 +367,28 @@ function Eyebrow({ children }: { children: ReactNode }) {
   );
 }
 
-function WeekStrip({ state }: { state: PublicState | null }) {
+function WeekStrip({
+  status,
+  state,
+  notice,
+  send,
+}: {
+  status: ConnectionStatus;
+  state: PublicState | null;
+  notice: RoomNotice | null;
+  send: ReturnType<typeof useRoom>["send"];
+}) {
+  const [openDay, setOpenDay] = useState<0 | 1 | 2 | 3 | 4 | null>(null);
   const picks = new Map(state?.picks.map((pick) => [pick.weekday, pick]) ?? []);
+  const openPick = openDay === null ? undefined : picks.get(openDay);
+  const taken = new Set(
+    (state?.picks ?? [])
+      .filter((pick) => pick.weekday !== openDay && !pick.empty && pick.restaurantId)
+      .map((pick) => pick.restaurantId),
+  );
+  const choices = (state?.restaurants ?? []).filter((restaurant) => !taken.has(restaurant.id));
+  const pastError = notice?.scope === "pick" ? notice.message : null;
+
   return (
     <section className="rounded-3xl bg-card p-5 ring-1 ring-foreground/10">
       <div className="mb-4">
@@ -379,30 +399,97 @@ function WeekStrip({ state }: { state: PublicState | null }) {
       </div>
       <ol className="flex flex-col gap-2">
         {DAY_LABELS.map((label, index) => {
-          const pick = picks.get(index as 0 | 1 | 2 | 3 | 4);
-          const name = pick?.name;
+          const day = index as 0 | 1 | 2 | 3 | 4;
+          const pick = picks.get(day);
+          const name = pick?.empty ? "空" : pick?.name;
           const today = state?.weekday === index;
+          const editable =
+            state?.weekday != null && index < state.weekday && pick?.confirmed !== true;
           return (
-            <li
-              key={label}
-              className={`flex items-baseline justify-between gap-3 rounded-2xl px-3 py-2 ${
-                today ? "bg-secondary ring-1 ring-primary/40" : "bg-background/70"
-              }`}
-            >
-              <span className="w-14 shrink-0 text-sm font-medium">
-                {label}
-                {today ? <span className="mt-0.5 block text-[10px] tracking-wide text-primary">今天</span> : null}
-              </span>
-              <span className={`text-right text-sm ${name ? "font-heading text-base font-medium" : "text-muted-foreground"}`}>
-                {name ?? "还没定"}
-                {pick?.confirmed ? (
-                  <span className="mt-0.5 block text-[10px] tracking-wide text-primary">已定</span>
-                ) : null}
-              </span>
+            <li key={label}>
+              <button
+                type="button"
+                disabled={!editable || status !== "live"}
+                onClick={() => setOpenDay(day)}
+                className={`flex w-full items-baseline justify-between gap-3 rounded-2xl border-0 px-3 py-2 text-left ${
+                  today ? "bg-secondary ring-1 ring-primary/40" : "bg-background/70"
+                } ${editable ? "cursor-pointer hover:ring-1 hover:ring-primary/30" : "cursor-default"} disabled:opacity-100`}
+              >
+                <span className="w-14 shrink-0 text-sm font-medium">
+                  {label}
+                  {today ? <span className="mt-0.5 block text-[10px] tracking-wide text-primary">今天</span> : null}
+                  {editable ? <span className="mt-0.5 block text-[10px] tracking-wide text-primary">可改</span> : null}
+                </span>
+                <span className={`text-right text-sm ${name ? "font-heading text-base font-medium" : "text-muted-foreground"}`}>
+                  {name ?? "还没定"}
+                  {pick?.confirmed ? (
+                    <span className="mt-0.5 block text-[10px] tracking-wide text-primary">已定</span>
+                  ) : null}
+                </span>
+              </button>
             </li>
           );
         })}
       </ol>
+      <Dialog open={openDay !== null} onOpenChange={(open) => { if (!open) setOpenDay(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{openDay === null ? "改这一天" : `改${DAY_LABELS[openDay]}`}</DialogTitle>
+            <DialogDescription>
+              这一天还没确定。选一家，或选空，然后再确定。已经确定的日子不能从这里改。
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="flex max-h-72 flex-col gap-1 overflow-y-auto">
+            <li>
+              <Button
+                type="button"
+                variant={openPick?.empty ? "secondary" : "ghost"}
+                className="h-11 w-full justify-start font-heading text-lg"
+                disabled={status !== "live" || openDay === null}
+                onClick={() => {
+                  if (openDay === null) return;
+                  send({ type: "choosePast", weekday: openDay, id: null });
+                }}
+              >
+                空
+              </Button>
+            </li>
+            {choices.map((restaurant) => (
+              <li key={restaurant.id}>
+                <Button
+                  type="button"
+                  variant={!openPick?.empty && openPick?.restaurantId === restaurant.id ? "secondary" : "ghost"}
+                  className="h-11 w-full justify-start font-heading text-lg"
+                  disabled={status !== "live" || openDay === null}
+                  onClick={() => {
+                    if (openDay === null) return;
+                    send({ type: "choosePast", weekday: openDay, id: restaurant.id });
+                  }}
+                >
+                  {restaurant.name}
+                </Button>
+              </li>
+            ))}
+          </ul>
+          <Button
+            type="button"
+            className="h-11"
+            disabled={status !== "live" || openDay === null || !openPick}
+            onClick={() => {
+              if (openDay === null) return;
+              send({ type: "confirmPast", weekday: openDay });
+              setOpenDay(null);
+            }}
+          >
+            确定这一天
+          </Button>
+          {pastError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {pastError}
+            </p>
+          ) : null}
+        </DialogContent>
+      </Dialog>
       {state?.debugStandIn ? (
         <p className="mt-4 text-sm text-muted-foreground">
           试抽：用{state.weekdayName}代替{state.realWeekdayName}。
